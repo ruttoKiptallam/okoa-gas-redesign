@@ -1,18 +1,67 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-// Real image URLs from reliable sources
+// ============================================
+// ✅ RELIABLE ONLINE IMAGE URLs
+// ============================================
 const images = {
-  gasHero: 'https://images.unsplash.com/photo-1513281362764-6f858a0e5c4b?auto=format&fit=crop&w=800&q=80',
-  deliveryTruck: '/assets/images/Quick Delivery.webp',
-  mobilePayment: 'https://github.com/ruttoKiptallam/okoa-gas-redesign/blob/main/frontend/src/assets/images/Mpesa%20Payment.webp',
-  gasRefills: '/assets/images/Gas Refills.webp=80',
-  cylinderKits: '/assets/images/New Cylinder Kits.webp',
-  compositeCylinders: 'https://github.com/ruttoKiptallam/okoa-gas-redesign/blob/main/frontend/src/assets/images/Mpesa%20Payment.webp',
-  lpgAccessories: '/assets/images/LPG Accessories.webp',
-  smartMeters: '/assets/images/Smart Meters.webp',
-  stepOrder: 'https://images.unsplash.com/photo-150784272343-583f20270319?auto=format&fit=crop&w=600&q=80',
-  stepInstallation: 'https://images.unsplash.com/photo-1516534775068-bb57100d4f10?auto=format&fit=crop&w=600&q=80',
-  stepTopup: 'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=600&q=80'
+  // Hero & Main Images
+  gasHero: 'https://images.unsplash.com/photo-1513281362764-6f858a0e5c4b?w=1200&h=600&fit=crop',
+  gasStove: 'https://images.unsplash.com/photo-1583267746897-2cf415887172?w=800&h=500&fit=crop',
+  
+  // Service Images
+  deliveryTruck: 'https://placehold.co/600x400/2A9D8F/white?text=Quick+Delivery',
+  mobilePayment: 'https://placehold.co/600x400/2A9D8F/white?text=M-PESA+Payment',
+  smartMeters: 'https://placehold.co/600x400/2A9D8F/white?text=Smart+Tracking',
+  gasRefills: 'https://placehold.co/600x400/264653/white?text=Gas+Refills',
+  cylinderKits: 'https://placehold.co/600x400/2A9D8F/white?text=New+Cylinder+Kits',
+  compositeCylinders: 'https://placehold.co/600x400/E9C46A/white?text=Composite+Cylinders',
+  lpgAccessories: 'https://placehold.co/600x400/F4A261/white?text=LPG+Accessories',
+  
+  // Step Images
+  stepOrder: 'https://placehold.co/600x400/2A9D8F/white?text=1.+Order+Online',
+  stepInstallation: 'https://placehold.co/600x400/2A9D8F/white?text=2.+Delivery+%26+Installation',
+  stepTopup: 'https://placehold.co/600x400/2A9D8F/white?text=3.+Top+Up+%26+Track',
+};
+
+// Image Component with automatic fallback
+const SafeImage = ({ src, alt, style, className, onClick }) => {
+  const [imageError, setImageError] = useState(false);
+  
+  if (imageError) {
+    // Emoji fallback based on alt text
+    let fallbackEmoji = '🔥';
+    if (alt === 'Gas Refills') fallbackEmoji = '🫙';
+    else if (alt === 'Cylinder Kits') fallbackEmoji = '🎁';
+    else if (alt === 'Smart Tracking') fallbackEmoji = '📡';
+    else if (alt === 'Secure Payment' || alt === 'M-PESA Payment') fallbackEmoji = '💰';
+    else if (alt === 'Quick Delivery') fallbackEmoji = '🚚';
+    
+    return (
+      <div style={{
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f0fdf4',
+        color: '#2A9D8F',
+        fontSize: '3rem'
+      }}>
+        {fallbackEmoji}
+      </div>
+    );
+  }
+  
+  return (
+    <img 
+      src={src} 
+      alt={alt} 
+      style={style}
+      className={className}
+      onClick={onClick}
+      onError={() => setImageError(true)}
+      loading="lazy"
+    />
+  );
 };
 
 const App = () => {
@@ -22,6 +71,7 @@ const App = () => {
   const [showNotification, setShowNotification] = useState(null);
   const [showSignUpModal, setShowSignUpModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [screenSize, setScreenSize] = useState({
     isMobile: window.innerWidth < 768,
@@ -47,8 +97,9 @@ const App = () => {
   
   const [selectedKit, setSelectedKit] = useState(kitOptions[0]);
   
-  // --- Form State (Only for final submission) ---
+  // --- Form State ---
   const [formData, setFormData] = useState({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
+  const [formErrors, setFormErrors] = useState({});
   const [locationAddress, setLocationAddress] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationStatus, setLocationStatus] = useState("");
@@ -100,9 +151,7 @@ const App = () => {
         marker.on('dragend', async () => {
           const pos = marker.getLatLng();
           setCoordinates({ lat: pos.lat, lng: pos.lng });
-          if (window.onMapMarkerMoved) {
-            window.onMapMarkerMoved(pos.lat, pos.lng);
-          }
+          await reverseGeocode(pos.lat, pos.lng);
         });
 
         window.currentMap = map;
@@ -162,7 +211,7 @@ const App = () => {
         setLocationStatus('Address found! Drag marker to fine-tune.');
 
         if (window.currentMap) {
-          window.currentMap.setView([latitude, longitude], 13);
+          window.currentMap.setView([latitude, longitude], 15);
           if (window.currentMarker) {
             window.currentMarker.setLatLng([latitude, longitude]);
           }
@@ -187,7 +236,7 @@ const App = () => {
       const { latitude, longitude } = position.coords;
       setCoordinates({ lat: latitude, lng: longitude });
       if (window.currentMap) {
-        window.currentMap.setView([latitude, longitude], 13);
+        window.currentMap.setView([latitude, longitude], 15);
         if (window.currentMarker) {
           window.currentMarker.setLatLng([latitude, longitude]);
         }
@@ -196,21 +245,11 @@ const App = () => {
       setLocationStatus('Current location loaded');
     }, (error) => {
       console.error('Geolocation error:', error);
-      setLocationStatus('Unable to get current location');
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      setLocationStatus('Unable to get current location. Please check permissions.');
+    }, { enableHighAccuracy: true, timeout: 10000 });
   };
 
-  useEffect(() => {
-    window.onMapMarkerMoved = async (lat, lng) => {
-      await reverseGeocode(lat, lng);
-    };
-
-    return () => {
-      window.onMapMarkerMoved = null;
-    };
-  }, []);
-
-  // --- M-PESA Payment Function ---
+  // --- M-PESA Payment Functions ---
   const normalizeMpesaPhone = (phone) => {
     if (!phone) return '';
     let cleaned = phone.toString().replace(/[\s-]/g, '');
@@ -230,7 +269,7 @@ const App = () => {
     const formattedPhone = normalizeMpesaPhone(paymentDetails.phoneNumber);
     const phoneRegex = /^2547\d{8}$/;
     if (!phoneRegex.test(formattedPhone)) {
-      showMessage('Enter a valid Kenyan M-PESA phone number (e.g., 0712345678 or +254712345678)', 'error');
+      showMessage('Enter a valid Kenyan M-PESA phone number (e.g., 0712345678)', 'error');
       return;
     }
 
@@ -341,6 +380,46 @@ const App = () => {
     setTimeout(() => setShowNotification(null), 3000);
   };
 
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: '' }));
+  };
+
+  const handleKitSelect = (kit) => {
+    setSelectedKit(kit);
+    setFormData(prev => ({ ...prev, kitId: kit.id }));
+    showMessage(`${kit.fullName} selected!`, 'success');
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    if (!formData.name.trim()) errors.name = 'Name required';
+    if (!formData.phone.trim()) errors.phone = 'Phone required';
+    else if (!/^(\+254|254|0)[17]\d{8}$/.test(formData.phone)) errors.phone = 'Valid Kenyan phone required';
+    if (!formData.location && !locationAddress) errors.location = 'Location required';
+    return errors;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage('Please fix errors', 'error');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setTimeout(() => {
+      showMessage(`✅ Thank you ${formData.name}! Your ${selectedKit.fullName} will be delivered soon.`, 'success');
+      setIsSubmitting(false);
+      setShowSignUpModal(false);
+      setFormData({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
+      setLocationAddress("");
+    }, 1500);
+  };
+
   const scrollTo = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -433,110 +512,16 @@ const App = () => {
     }}>{children}</button>
   );
 
-  // --- SIGNUP MODAL - COMPLETELY ISOLATED COMPONENT ---
-  // This component is defined outside to prevent re-renders
-  const SignUpModal = ({ showSignUpModal, locationAddress, formData, selectedKit }) => {
-    // All state is LOCAL to this component
-    const [localName, setLocalName] = useState('');
-    const [localPhone, setLocalPhone] = useState('');
-    const [localEmail, setLocalEmail] = useState('');
-    const [localInstructions, setLocalInstructions] = useState('');
-    const [localLocation, setLocalLocation] = useState('');
-    const [localSelectedKitId, setLocalSelectedKitId] = useState('6kg');
-    const [localErrors, setLocalErrors] = useState({});
-    const [localSubmitting, setLocalSubmitting] = useState(false);
-    const [searchQuery, setSearchQuery] = useState(locationAddress || '');
-
-    useEffect(() => {
-      if (showSignUpModal) {
-        setLocalName(formData.name);
-        setLocalPhone(formData.phone);
-        setLocalEmail(formData.email);
-        setLocalInstructions(formData.instructions);
-        setLocalLocation(locationAddress);
-        setSearchQuery(locationAddress || '');
-        setLocalSelectedKitId(selectedKit.id);
-        setLocalErrors({});
-      }
-    }, [showSignUpModal, formData, locationAddress, selectedKit.id]);
-    
+  // --- SignUp Modal Component ---
+  const SignUpModal = () => {
     if (!showSignUpModal) return null;
-    
-    const localSelectedKit = kitOptions.find(k => k.id === localSelectedKitId) || kitOptions[0];
-    
-    const validateForm = () => {
-      const errors = {};
-      if (!localName.trim()) errors.name = 'Name required';
-      if (!localPhone.trim()) errors.phone = 'Phone required';
-      else if (!/^(\+254|254|0)[17]\d{8}$/.test(localPhone)) errors.phone = 'Valid Kenyan phone required';
-      if (!localLocation) errors.location = 'Location required';
-      return errors;
-    };
-    
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      const errors = validateForm();
-      if (Object.keys(errors).length > 0) {
-        setLocalErrors(errors);
-        showMessage('Please fix errors', 'error');
-        return;
-      }
-      
-      setLocalSubmitting(true);
-      
-      // Update parent state
-      const finalLocation = localLocation || locationAddress;
-      setFormData({
-        name: localName,
-        phone: localPhone,
-        email: localEmail,
-        location: finalLocation,
-        kitId: localSelectedKitId,
-        instructions: localInstructions
-      });
-      setLocationAddress(finalLocation);
-      setSearchQuery(finalLocation || '');
-      setSelectedKit(localSelectedKit);
-      
-      setTimeout(() => {
-        showMessage(`✅ Thank you ${localName}! Your ${localSelectedKit.fullName} will be delivered soon.`, 'success');
-        setLocalSubmitting(false);
-        setShowSignUpModal(false);
-        setLocalName('');
-        setLocalPhone('');
-        setLocalEmail('');
-        setLocalInstructions('');
-        setLocalLocation('');
-        setFormData({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
-        setLocationAddress("");
-      }, 1500);
-    };
     
     return (
       <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        bottom: 0, 
-        backgroundColor: 'rgba(0,0,0,0.8)', 
-        zIndex: 2000, 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        padding: screenSize.isMobile ? '0.5rem' : '1rem',
-        overflowY: 'auto'
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 2000, 
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: screenSize.isMobile ? '0.5rem' : '1rem', overflowY: 'auto'
       }} onClick={() => setShowSignUpModal(false)}>
-        <div style={{ 
-          backgroundColor: 'white', 
-          borderRadius: '24px', 
-          maxWidth: screenSize.isMobile ? '100%' : '900px', 
-          width: '100%', 
-          maxHeight: '85vh', 
-          overflowY: 'auto', 
-          padding: screenSize.isMobile ? '1rem' : '1.5rem', 
-          position: 'relative'
-        }} onClick={e => e.stopPropagation()}>
+        <div style={{ backgroundColor: 'white', borderRadius: '24px', maxWidth: screenSize.isMobile ? '100%' : '900px', width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: screenSize.isMobile ? '1rem' : '1.5rem', position: 'relative' }} onClick={e => e.stopPropagation()}>
           
           <button onClick={() => setShowSignUpModal(false)} style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
           
@@ -545,7 +530,7 @@ const App = () => {
           {/* Kit Selection */}
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
             {kitOptions.map(kit => (
-              <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} style={{ border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : '#ddd'}`, borderRadius: '12px', padding: '0.75rem', cursor: 'pointer', backgroundColor: localSelectedKitId === kit.id ? `${theme.primary}10` : 'white' }}>
+              <div key={kit.id} onClick={() => handleKitSelect(kit)} style={{ border: `2px solid ${selectedKit.id === kit.id ? theme.primary : '#ddd'}`, borderRadius: '12px', padding: '0.75rem', cursor: 'pointer', backgroundColor: selectedKit.id === kit.id ? `${theme.primary}10` : 'white' }}>
                 <div style={{ fontSize: '1.5rem' }}>{kit.icon}</div>
                 <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{kit.fullName}</div>
                 <div style={{ fontSize: '0.7rem', color: theme.gray }}>{kit.size} {kit.cooker}</div>
@@ -560,19 +545,19 @@ const App = () => {
               <div>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Full Name *</label>
-                  <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
-                  {localErrors.name && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
+                  <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus style={{ width: '100%', padding: '0.75rem', border: `1px solid ${formErrors.name ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                  {formErrors.name && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{formErrors.name}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Phone Number *</label>
-                  <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} placeholder="0712345678" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
-                  {localErrors.phone && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
+                  <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="0712345678" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: `1px solid ${formErrors.phone ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                  {formErrors.phone && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{formErrors.phone}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Email Address</label>
-                  <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} placeholder="john@example.com" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="john@example.com" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
                 </div>
               </div>
               
@@ -581,31 +566,31 @@ const App = () => {
                 {!useSimpleMap ? (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '2fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <input type="text" placeholder="Search delivery address" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', boxSizing: 'border-box' }} />
+                      <input type="text" placeholder="Search delivery address" value={locationQuery} onChange={e => setLocationQuery(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${formErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', boxSizing: 'border-box' }} />
                       <button type="button" onClick={searchLocation} style={{ background: theme.primary, color: 'white', border: 'none', borderRadius: '8px', padding: '0.75rem', cursor: 'pointer' }}>Find</button>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <button type="button" onClick={useCurrentLocation} style={{ flex: 1, background: theme.secondary, color: theme.dark, border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>Use My Location</button>
+                      <button type="button" onClick={useCurrentLocation} style={{ flex: 1, background: theme.secondary, color: theme.dark, border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>📍 My Location</button>
                       <button type="button" onClick={() => setUseSimpleMap(true)} style={{ flex: 1, background: '#f0f0f0', color: theme.dark, border: `1px solid ${theme.primary}`, borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>Manual Entry</button>
                     </div>
-                    <div ref={mapRef} style={{ height: '220px', borderRadius: '12px', border: `2px solid ${localErrors.location ? theme.danger : theme.primary}`, marginBottom: '0.5rem', backgroundColor: '#f0f0f0' }}>
+                    <div ref={mapRef} style={{ height: '220px', borderRadius: '12px', border: `2px solid ${formErrors.location ? theme.danger : theme.primary}`, marginBottom: '0.5rem', backgroundColor: '#f0f0f0' }}>
                       {!mapLoaded && <div style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.8rem' }}>Loading map... Please wait.</div>}
                     </div>
                   </>
                 ) : (
-                  <input type="text" placeholder="Enter delivery address" value={localLocation} onChange={e => { setLocalLocation(e.target.value); setLocationAddress(e.target.value); }} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${localErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
+                  <input type="text" placeholder="Enter delivery address" value={locationAddress} onChange={e => { setLocationAddress(e.target.value); setFormData(prev => ({ ...prev, location: e.target.value })); }} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${formErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
                 )}
-                {(localLocation || locationAddress) && <div style={{ fontSize: '0.7rem', color: theme.gray, marginTop: '0.25rem' }}>📍 {localLocation || locationAddress}</div>}
+                {(locationAddress || locationQuery) && <div style={{ fontSize: '0.7rem', color: theme.gray, marginTop: '0.25rem' }}>📍 {locationAddress || locationQuery}</div>}
                 {locationStatus && <div style={{ fontSize: '0.75rem', color: '#555', marginTop: '0.25rem' }}>{locationStatus}</div>}
-                {localErrors.location && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
+                {formErrors.location && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{formErrors.location}</p>}
               </div>
             </div>
             
-            <textarea value={localInstructions} onChange={e => setLocalInstructions(e.target.value)} placeholder="Special instructions (gate code, landmark...)" rows="2" style={{ width: '100%', padding: '0.6rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', boxSizing: 'border-box' }} />
+            <textarea name="instructions" placeholder="Special instructions (gate code, landmark...)" value={formData.instructions} onChange={handleInputChange} rows="2" style={{ width: '100%', padding: '0.6rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', boxSizing: 'border-box' }} />
             
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setShowSignUpModal(false)} style={{ background: 'white', color: theme.primary, border: `2px solid ${theme.primary}`, padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
-              <button type="submit" disabled={localSubmitting} style={{ background: theme.primary, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', opacity: localSubmitting ? 0.7 : 1, fontSize: '0.9rem' }}>{localSubmitting ? 'Processing...' : 'Get Free Kit →'}</button>
+              <button type="submit" disabled={isSubmitting} style={{ background: theme.primary, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, fontSize: '0.9rem' }}>{isSubmitting ? 'Processing...' : 'Get Free Kit →'}</button>
             </div>
           </form>
         </div>
@@ -617,9 +602,8 @@ const App = () => {
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', backgroundColor: theme.light, minHeight: '100vh' }}>
       <style>{`
-        @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 rgba(42,157,143,0.3); } 50% { box-shadow: 0 0 20px rgba(42,157,143,0.2); } }
         .hero-animate { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
         .feature-card { animation: fadeInUp 0.7s ease forwards; opacity: 0; }
         input, textarea, button { font-family: inherit; }
@@ -628,23 +612,30 @@ const App = () => {
       {showNotification && <div style={{ position: 'fixed', top: '70px', right: '10px', left: screenSize.isMobile ? '10px' : 'auto', backgroundColor: showNotification.type === 'error' ? theme.danger : (showNotification.type === 'warning' ? theme.accent : theme.primary), color: 'white', padding: '0.75rem', borderRadius: '8px', zIndex: 1001, animation: 'slideIn 0.3s ease', textAlign: 'center', maxWidth: screenSize.isMobile ? 'auto' : '350px' }}>{showNotification.message}</div>}
       
       <PaymentModal />
-      <SignUpModal showSignUpModal={showSignUpModal} locationAddress={locationAddress} formData={formData} selectedKit={selectedKit} />
+      <SignUpModal />
       
-      {/* Header */}
+      {/* Header with ORIGINAL LOGO (Fire Emoji) */}
       <header style={{ background: 'white', padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {/* ORIGINAL LOGO RETAINED - Fire Emoji + Text */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }} onClick={() => scrollTo('home')}>
-            <span style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem' }}>🔥</span>
-            <span style={{ fontWeight: 'bold', fontSize: screenSize.isMobile ? '1rem' : '1.2rem', color: theme.dark }}>OKOA GAS</span>
+            <span style={{ fontSize: screenSize.isMobile ? '1.8rem' : '2rem' }}>🔥</span>
+            <span style={{ fontWeight: 'bold', fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: theme.dark }}>OKOA GAS</span>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            {!screenSize.isMobile && <><button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Home</button><button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Features</button></>}
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {!screenSize.isMobile && (
+              <>
+                <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: theme.dark }}>Home</button>
+                <button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: theme.dark }}>Features</button>
+                <button onClick={() => scrollTo('safety')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: theme.dark }}>Safety</button>
+              </>
+            )}
             <Button onClick={() => setShowSignUpModal(true)} small>Get Free Kit</Button>
           </div>
         </div>
       </header>
       
-      {/* Hero */}
+      {/* Hero Section */}
       <div id="home" style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '4rem 2rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: screenSize.isMobile ? '2rem' : '3rem', color: theme.dark }}>Clean Cooking for Every Home.</h1>
         <p style={{ fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: theme.primary, margin: '0.5rem 0' }}>Pay as you go from KES 1.</p>
@@ -653,6 +644,7 @@ const App = () => {
           <Button onClick={() => setShowSignUpModal(true)}>Get Your Free Kit →</Button>
           <Button onClick={() => setShowPaymentModal(true)} primary={false}>Top Up M-PESA</Button>
         </div>
+        
         <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1rem', alignItems: 'center', marginTop: '2rem' }}>
           <div className="hero-animate" style={{ padding: '1.5rem', background: '#eef8f7', borderRadius: '24px', boxShadow: '0 18px 40px rgba(42,157,143,0.08)' }}>
             <h3 style={{ margin: 0, color: theme.primary }}>Why customers love OKOA GAS</h3>
@@ -664,7 +656,7 @@ const App = () => {
             </ul>
           </div>
           <div className="hero-animate" style={{ borderRadius: '24px', overflow: 'hidden', minHeight: '240px', position: 'relative', background: '#ddd' }}>
-            <img src={images.gasHero} alt="Clean cooking" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'brightness(0.9)' }} />
+            <SafeImage src={images.gasHero} alt="Clean cooking" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', bottom: '1rem', left: '1rem', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.85)', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.12)' }}>
               <strong style={{ color: theme.primary }}>Smart delivery + cashless payment.</strong>
             </div>
@@ -693,23 +685,23 @@ const App = () => {
             <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.gray }}>See how OKOA GAS delivers clean cooking solutions to homes and businesses across Kenya.</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: '1rem' }}>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 0.8s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
-              <img src={images.deliveryTruck} alt="Quick Delivery" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem', background: '#fff' }}>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.08)', background: 'white' }}>
+              <SafeImage src={images.deliveryTruck} alt="Quick Delivery" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem' }}>
                 <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Quick Delivery</h3>
                 <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Stove-ready LPG cylinders delivered within hours to your doorstep.</p>
               </div>
             </div>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 0.9s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
-              <img src={images.mobilePayment} alt="Secure Payment" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem', background: '#fff' }}>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.08)', background: 'white' }}>
+              <SafeImage src={images.mobilePayment} alt="Secure Payment" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem' }}>
                 <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Secure Payment</h3>
                 <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Pay instantly with M-PESA. No cash, no hassle, full transparency.</p>
               </div>
             </div>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 1s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
-              <img src={images.smartMeters} alt="Smart Tracking" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem', background: '#fff' }}>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.08)', background: 'white' }}>
+              <SafeImage src={images.smartMeters} alt="Smart Tracking" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem' }}>
                 <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Smart Tracking</h3>
                 <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Monitor your gas usage in real-time and never run out unexpectedly.</p>
               </div>
@@ -734,86 +726,11 @@ const App = () => {
               { image: images.stepTopup, title: 'Top up & track', text: 'Use M-PESA to top up and monitor usage with smart meter support.' }
             ].map((item, index) => (
               <div key={index} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f7fdfb', boxShadow: '0 18px 40px rgba(42,157,143,0.08)', textAlign: 'center' }}>
-                <img src={item.image} alt={item.title} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} onError={(e) => e.target.style.display = 'none'} />
+                <SafeImage src={item.image} alt={item.title} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
                 <h3 style={{ margin: '0.5rem 0', color: theme.dark }}>{item.title}</h3>
                 <p style={{ margin: 0, color: theme.gray, lineHeight: 1.7 }}>{item.text}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Product & Service Overview */}
-      <div style={{ background: '#ffffff', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{ fontSize: '0.9rem', color: theme.secondary, fontWeight: '700' }}>What We Offer</div>
-            <h2 style={{ fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem', margin: '0.5rem 0', color: theme.dark }}>Gas refills, kits, accessories and smart LPG services</h2>
-            <p style={{ maxWidth: '700px', margin: '0 auto', color: theme.gray }}>Simple, transparent choices for every household and business — from small cylinders to pay-as-you-go smart meters.</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '1rem' }}>
-            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f7fdfb', boxShadow: '0 18px 40px rgba(42,157,143,0.08)', textAlign: 'center' }}>
-              <img src={images.gasRefills} alt="Gas Refills" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-              <h3 style={{ marginTop: 0, color: theme.primary }}>Gas Refills</h3>
-              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Choose from our standard cylinder sizes for the right balance of convenience and cooking power.</p>
-              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
-                <li>3kg compact refill</li>
-                <li>6kg everyday home refill</li>
-                <li>13kg family refill</li>
-                <li>22.5kg larger cooking refill</li>
-                <li>50kg commercial refill</li>
-              </ul>
-            </div>
-
-            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f4f7ff', boxShadow: '0 18px 40px rgba(40,80,180,0.08)', textAlign: 'center' }}>
-              <img src={images.cylinderKits} alt="Cylinder Kits" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-              <h3 style={{ marginTop: 0, color: theme.primary }}>New Cylinder Kits</h3>
-              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Complete starter packages that include everything you need to begin cooking safely.</p>
-              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
-                <li>Cylinder</li>
-                <li>Regulator</li>
-                <li>Hosepipe</li>
-                <li>Burner</li>
-                <li>Installation-ready setup</li>
-              </ul>
-            </div>
-
-            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#fff6f4', boxShadow: '0 18px 40px rgba(231,111,81,0.08)', textAlign: 'center' }}>
-              <img src={images.compositeCylinders} alt="Composite Cylinders" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-              <h3 style={{ marginTop: 0, color: theme.primary }}>Composite Cylinders</h3>
-              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Lightweight, durable cylinder options designed for easy handling and safe refills.</p>
-              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
-                <li>6kg composite cylinder</li>
-                <li>13kg composite cylinder</li>
-                <li>Strong, corrosion-resistant material</li>
-                <li>Sleek modern design</li>
-              </ul>
-            </div>
-
-            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#fff8e1', boxShadow: '0 18px 40px rgba(228,155,15,0.08)', textAlign: 'center' }}>
-              <img src={images.lpgAccessories} alt="LPG Accessories" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-              <h3 style={{ marginTop: 0, color: theme.primary }}>LPG Accessories</h3>
-              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Everything you need to keep your LPG system safe, efficient and ready to use.</p>
-              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
-                <li>Low and high pressure regulators</li>
-                <li>Hosepipes and burners</li>
-                <li>Igniters, grills and lanterns</li>
-                <li>Replacement parts and upgrades</li>
-              </ul>
-            </div>
-
-            <div className="feature-card" style={{ gridColumn: screenSize.isMobile ? 'auto' : 'span 2', padding: '1.5rem', borderRadius: '24px', background: '#eef8ff', boxShadow: '0 18px 40px rgba(42,157,233,0.08)', textAlign: 'center' }}>
-              <img src={images.smartMeters} alt="Smart Meters" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-              <h3 style={{ marginTop: 0, color: theme.primary }}>Smart Meters</h3>
-              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Track gas use and pay-as-you-go with smart metering for selected LPG systems.</p>
-              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
-                <li>Real-time usage monitoring</li>
-                <li>Pay only for gas consumed</li>
-                <li>Ideal for households and small businesses</li>
-                <li>Easy connection with our M-PESA payment flow</li>
-              </ul>
-            </div>
           </div>
         </div>
       </div>
@@ -833,7 +750,11 @@ const App = () => {
           <h2 style={{ textAlign: 'center', fontSize: screenSize.isMobile ? '1.5rem' : '2rem', marginBottom: '1.5rem' }}>The "Zero Upfront" Promise</h2>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
             {[ { icon: '🫙', name: 'Free Cylinder', desc: '6kg or 13kg cylinder' }, { icon: '🍳', name: 'Free Cooker', desc: '2-3 burner cooker' }, { icon: '📡', name: 'Smart Meter', desc: 'Pay for what you use' } ].map((item, i) => (
-              <div key={i} style={{ textAlign: 'center', padding: '1rem' }}><div style={{ fontSize: '2rem' }}>{item.icon}</div><h3 style={{ color: theme.primary }}>{item.name}</h3><p style={{ color: theme.gray, fontSize: '0.9rem' }}>{item.desc}</p></div>
+              <div key={i} style={{ textAlign: 'center', padding: '1rem' }}>
+                <div style={{ fontSize: '2rem' }}>{item.icon}</div>
+                <h3 style={{ color: theme.primary }}>{item.name}</h3>
+                <p style={{ color: theme.gray, fontSize: '0.9rem' }}>{item.desc}</p>
+              </div>
             ))}
           </div>
         </div>
@@ -842,23 +763,37 @@ const App = () => {
       {/* Smart Meter */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1.5rem', alignItems: 'center' }}>
-          <div><h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2><p>See live gas level, top up instantly via M-PESA.</p><div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}><Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button></div></div>
+          <div>
+            <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2>
+            <p>See live gas level, top up instantly via M-PESA.</p>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button>
+            </div>
+          </div>
           <div style={{ background: theme.dark, borderRadius: '16px', padding: '1rem', color: 'white' }}>
             <div>Gas Level: {gasLevel}%</div>
-            <div style={{ height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', margin: '0.5rem 0' }}><div style={{ width: `${gasLevel}%`, height: '100%', background: theme.secondary, borderRadius: '4px' }}></div></div>
+            <div style={{ height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', margin: '0.5rem 0' }}>
+              <div style={{ width: `${gasLevel}%`, height: '100%', background: theme.secondary, borderRadius: '4px' }}></div>
+            </div>
             <div>Balance: KES {balance.toFixed(2)}</div>
             <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: theme.secondary, color: theme.dark, border: 'none', padding: '0.3rem 0.8rem', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>Add Money</button>
           </div>
         </div>
       </div>
       
-      {/* Safety */}
+      {/* Safety Section */}
       <div id="safety" style={{ background: theme.dark, padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <h2 style={{ textAlign: 'center', color: 'white', fontSize: screenSize.isMobile ? '1.5rem' : '2rem' }}>Safety First, Always.</h2>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '1rem', marginTop: '1.5rem' }}>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}><h3 style={{ color: theme.secondary }}>Automatic Leak Detection</h3><p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>High-precision sensors monitor air continuously.</p></div>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}><h3 style={{ color: theme.secondary }}>Emergency Valve Shutoff</h3><p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>Immediate mechanical shutoff when leak detected.</p></div>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}>
+              <h3 style={{ color: theme.secondary }}>Automatic Leak Detection</h3>
+              <p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>High-precision sensors monitor air continuously. Instant alerts on your phone.</p>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}>
+              <h3 style={{ color: theme.secondary }}>Emergency Valve Shutoff</h3>
+              <p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>Immediate mechanical shutoff when leak detected. Zero risk of accidents.</p>
+            </div>
           </div>
         </div>
       </div>
