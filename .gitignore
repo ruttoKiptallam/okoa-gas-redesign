@@ -21,3 +21,14 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.env
+.env.*
+!.env.example
+
+# Frontend
+frontend/.env
+frontend/.env.*
+
+# Backend
+backend/.env
+backend/.env.*
