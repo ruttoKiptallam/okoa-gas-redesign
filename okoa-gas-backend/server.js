@@ -14,6 +14,16 @@ const SHORTCODE = process.env.SHORTCODE; // 174379 (for sandbox) or your Paybill
 const PASSKEY = process.env.PASSKEY; // Your passkey
 const CALLBACK_URL = process.env.CALLBACK_URL || 'https://your-domain.com/api/mpesa/callback';
 
+const normalizePhoneNumber = (phone) => {
+    if (!phone) return null;
+    let cleaned = phone.toString().replace(/[\s-]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+    if (/^2547\d{8}$/.test(cleaned)) return cleaned;
+    if (/^0\d{9}$/.test(cleaned)) return '254' + cleaned.slice(1);
+    if (/^7\d{8}$/.test(cleaned)) return '254' + cleaned;
+    return null;
+};
+
 // Get OAuth Token
 async function getAccessToken() {
     const auth = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString('base64');
@@ -38,12 +48,16 @@ async function getAccessToken() {
 async function stkPush(phoneNumber, amount, accountReference, transactionDesc) {
     const token = await getAccessToken();
     
-    // Format phone number (remove 0 or +254, add 254)
-    let formattedPhone = phoneNumber.toString().replace(/\s/g, '');
+    // Format phone number (accept 07, +2547, 2547)
+    let formattedPhone = phoneNumber.toString().replace(/[\s-]/g, '');
+    if (formattedPhone.startsWith('+')) {
+        formattedPhone = formattedPhone.substring(1);
+    }
     if (formattedPhone.startsWith('0')) {
         formattedPhone = '254' + formattedPhone.substring(1);
-    } else if (formattedPhone.startsWith('+')) {
-        formattedPhone = formattedPhone.substring(1);
+    }
+    if (formattedPhone.startsWith('7') && formattedPhone.length === 9) {
+        formattedPhone = '254' + formattedPhone;
     }
     
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3);
@@ -114,24 +128,26 @@ app.post('/api/mpesa/callback', (req, res) => {
 // API Endpoint: Initiate Payment
 app.post('/api/mpesa/pay', async (req, res) => {
     const { phoneNumber, amount, accountReference, description } = req.body;
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const amountValue = parseFloat(amount);
     
     // Validate
-    if (!phoneNumber || !amount) {
+    if (!normalizedPhone || !amountValue) {
         return res.status(400).json({ 
             success: false, 
-            message: 'Phone number and amount are required' 
+            message: 'Valid phone number and amount are required' 
         });
     }
     
-    if (amount < 1) {
+    if (amountValue < 100) {
         return res.status(400).json({ 
             success: false, 
-            message: 'Minimum amount is KES 1' 
+            message: 'Minimum amount is KES 100' 
         });
     }
     
     try {
-        const response = await stkPush(phoneNumber, amount, accountReference, description);
+        const response = await stkPush(normalizedPhone, amountValue, accountReference, description);
         
         if (response.ResponseCode === '0') {
             res.json({

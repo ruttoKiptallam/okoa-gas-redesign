@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const App = () => {
   // --- State ---
-  const [gasLevel, setGasLevel] = useState(85);
+  const [gasLevel] = useState(85);
   const [balance, setBalance] = useState(75.50);
   const [showNotification, setShowNotification] = useState(null);
   const [showSignUpModal, setShowSignUpModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [screenSize, setScreenSize] = useState({
     isMobile: window.innerWidth < 768,
@@ -17,7 +16,7 @@ const App = () => {
   // --- Payment State ---
   const [paymentDetails, setPaymentDetails] = useState({
     phoneNumber: '',
-    amount: 100,
+    amount: '100',
     checkoutRequestID: null
   });
   
@@ -33,16 +32,17 @@ const App = () => {
   
   const [selectedKit, setSelectedKit] = useState(kitOptions[0]);
   
-  // --- Form State ---
+  // --- Form State (Only for final submission) ---
   const [formData, setFormData] = useState({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
-  const [formErrors, setFormErrors] = useState({});
   const [locationAddress, setLocationAddress] = useState("");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationStatus, setLocationStatus] = useState("");
   
   // --- Map State ---
   const [mapLoaded, setMapLoaded] = useState(false);
   const [useSimpleMap, setUseSimpleMap] = useState(false);
   const mapRef = useRef(null);
-  const [coordinates] = useState({ lat: -1.286389, lng: 36.817223 });
+  const [coordinates, setCoordinates] = useState({ lat: -1.286389, lng: 36.817223 });
 
   // --- Screen Resize Handler ---
   useEffect(() => {
@@ -73,47 +73,158 @@ const App = () => {
 
   // Initialize Map
   useEffect(() => {
-    if (mapLoaded && !useSimpleMap && showSignUpModal && mapRef.current && !window.mapInit) {
-      window.mapInit = true;
-      const map = window.L.map(mapRef.current).setView([coordinates.lat, coordinates.lng], 13);
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-      }).addTo(map);
-      
-      const marker = window.L.marker([coordinates.lat, coordinates.lng], { draggable: true }).addTo(map);
-      
-      marker.on('dragend', (e) => {
-        const pos = marker.getLatLng();
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.lat}&lon=${pos.lng}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.display_name) {
-              setLocationAddress(data.display_name);
-              setFormData(prev => ({ ...prev, location: data.display_name }));
-            }
-          });
-      });
-      
-      window.currentMap = map;
-      window.currentMarker = marker;
+    if (mapLoaded && !useSimpleMap && showSignUpModal && mapRef.current) {
+      if (!window.mapInit) {
+        window.mapInit = true;
+        const map = window.L.map(mapRef.current).setView([coordinates.lat, coordinates.lng], 13);
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        const marker = window.L.marker([coordinates.lat, coordinates.lng], { draggable: true }).addTo(map);
+        marker.on('dragend', async () => {
+          const pos = marker.getLatLng();
+          setCoordinates({ lat: pos.lat, lng: pos.lng });
+          if (window.onMapMarkerMoved) {
+            window.onMapMarkerMoved(pos.lat, pos.lng);
+          }
+        });
+
+        window.currentMap = map;
+        window.currentMarker = marker;
+      } else {
+        window.currentMap.invalidateSize();
+        if (window.currentMarker) {
+          window.currentMarker.setLatLng([coordinates.lat, coordinates.lng]);
+        }
+        window.currentMap.setView([coordinates.lat, coordinates.lng], 13);
+      }
     }
   }, [mapLoaded, useSimpleMap, showSignUpModal, coordinates]);
 
+  useEffect(() => {
+    if (showSignUpModal && mapLoaded && window.currentMap) {
+      setTimeout(() => {
+        window.currentMap.invalidateSize();
+      }, 100);
+    }
+  }, [showSignUpModal, mapLoaded]);
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      const data = await response.json();
+      if (data?.display_name) {
+        setLocationAddress(data.display_name);
+        setLocationQuery(data.display_name);
+        setLocationStatus('Location loaded from map');
+        return data.display_name;
+      }
+    } catch (error) {
+      console.error('Reverse geocode error:', error);
+      setLocationStatus('Unable to resolve location.');
+    }
+    return null;
+  };
+
+  const searchLocation = async () => {
+    const query = locationQuery.trim();
+    if (!query) {
+      setLocationStatus('Enter a location to search');
+      return;
+    }
+
+    setLocationStatus('Searching for address...');
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+      const results = await response.json();
+      if (results.length > 0) {
+        const { lat, lon, display_name } = results[0];
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lon);
+        setCoordinates({ lat: latitude, lng: longitude });
+        setLocationAddress(display_name);
+        setLocationStatus('Address found! Drag marker to fine-tune.');
+
+        if (window.currentMap) {
+          window.currentMap.setView([latitude, longitude], 13);
+          if (window.currentMarker) {
+            window.currentMarker.setLatLng([latitude, longitude]);
+          }
+        }
+      } else {
+        setLocationStatus('Address not found. Try a more specific place.');
+      }
+    } catch (error) {
+      console.error('Search location error:', error);
+      setLocationStatus('Search failed. Please try again.');
+    }
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationStatus('Geolocation is not available in this browser');
+      return;
+    }
+
+    setLocationStatus('Getting current location...');
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      setCoordinates({ lat: latitude, lng: longitude });
+      if (window.currentMap) {
+        window.currentMap.setView([latitude, longitude], 13);
+        if (window.currentMarker) {
+          window.currentMarker.setLatLng([latitude, longitude]);
+        }
+      }
+      await reverseGeocode(latitude, longitude);
+      setLocationStatus('Current location loaded');
+    }, (error) => {
+      console.error('Geolocation error:', error);
+      setLocationStatus('Unable to get current location');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  };
+
+  useEffect(() => {
+    window.onMapMarkerMoved = async (lat, lng) => {
+      await reverseGeocode(lat, lng);
+    };
+
+    return () => {
+      window.onMapMarkerMoved = null;
+    };
+  }, []);
+
   // --- M-PESA Payment Function ---
+  const normalizeMpesaPhone = (phone) => {
+    if (!phone) return '';
+    let cleaned = phone.toString().replace(/[\s-]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+    if (/^2547\d{8}$/.test(cleaned)) return cleaned;
+    if (/^0\d{9}$/.test(cleaned)) return '254' + cleaned.slice(1);
+    if (/^7\d{8}$/.test(cleaned)) return '254' + cleaned;
+    return cleaned;
+  };
+
   const initiateMpesaPayment = async () => {
-    // Validate phone number
     if (!paymentDetails.phoneNumber) {
       showMessage('Please enter your M-PESA phone number', 'error');
       return;
     }
-    
-    // Validate Kenyan phone number format
-    const phoneRegex = /^(\+254|0)[17]\d{8}$/;
-    if (!phoneRegex.test(paymentDetails.phoneNumber)) {
-      showMessage('Enter a valid Kenyan phone number (e.g., 0712345678)', 'error');
+
+    const formattedPhone = normalizeMpesaPhone(paymentDetails.phoneNumber);
+    const phoneRegex = /^2547\d{8}$/;
+    if (!phoneRegex.test(formattedPhone)) {
+      showMessage('Enter a valid Kenyan M-PESA phone number (e.g., 0712345678 or +254712345678)', 'error');
       return;
     }
-    
+
+    const amountValue = Number(paymentDetails.amount);
+    if (!amountValue || amountValue < 100) {
+      showMessage('Enter an amount of at least KES 100', 'error');
+      return;
+    }
+
     setProcessingPayment(true);
     showMessage('Sending STK Push to your phone...', 'info');
     
@@ -122,10 +233,10 @@ const App = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: paymentDetails.phoneNumber,
-          amount: paymentDetails.amount,
+          phoneNumber: formattedPhone,
+          amount: amountValue,
           accountReference: `OKOA-${Date.now()}`,
-          description: `OKOA GAS top up - KES ${paymentDetails.amount}`
+          description: `OKOA GAS top up - KES ${amountValue}`
         })
       });
       
@@ -134,8 +245,6 @@ const App = () => {
       if (data.success) {
         setPaymentDetails(prev => ({ ...prev, checkoutRequestID: data.checkoutRequestID }));
         showMessage('✅ STK Push sent! Enter your M-PESA PIN to complete payment.', 'success');
-        
-        // Poll for payment status
         pollPaymentStatus(data.checkoutRequestID);
       } else {
         showMessage(data.message || 'Payment initiation failed', 'error');
@@ -148,10 +257,9 @@ const App = () => {
     }
   };
   
-  // Poll payment status
   const pollPaymentStatus = async (checkoutRequestID) => {
     let attempts = 0;
-    const maxAttempts = 30; // 30 seconds max
+    const maxAttempts = 30;
     
     const interval = setInterval(async () => {
       attempts++;
@@ -166,15 +274,15 @@ const App = () => {
         const data = await response.json();
         
         if (data.ResultCode === '0') {
-          // Payment successful
           clearInterval(interval);
-          const newBalance = balance + paymentDetails.amount;
+          const amountValue = Number(paymentDetails.amount);
+          const newBalance = balance + amountValue;
           setBalance(newBalance);
           showMessage(`💰 Payment successful! New balance: KES ${newBalance.toFixed(2)}`, 'success');
           setProcessingPayment(false);
           setShowPaymentModal(false);
-          setPaymentDetails({ phoneNumber: '', amount: 100, checkoutRequestID: null });
-        } else if (data.ResultCode !== '1037') { // 1037 means pending
+          setPaymentDetails({ phoneNumber: '', amount: '100', checkoutRequestID: null });
+        } else if (data.ResultCode !== '1037') {
           clearInterval(interval);
           showMessage('Payment failed or cancelled', 'error');
           setProcessingPayment(false);
@@ -193,7 +301,6 @@ const App = () => {
     }, 2000);
   };
   
-  // --- Simulate M-PESA (for testing without API) ---
   const simulateMpesaPayment = () => {
     if (!paymentDetails.phoneNumber) {
       showMessage('Please enter your M-PESA phone number', 'error');
@@ -204,59 +311,19 @@ const App = () => {
     showMessage('Simulating M-PESA STK Push...', 'info');
     
     setTimeout(() => {
-      const newBalance = balance + paymentDetails.amount;
+      const amountValue = Number(paymentDetails.amount);
+      const newBalance = balance + amountValue;
       setBalance(newBalance);
       showMessage(`✅ Demo Payment successful! Added KES ${paymentDetails.amount}. New balance: KES ${newBalance.toFixed(2)}`, 'success');
       setProcessingPayment(false);
       setShowPaymentModal(false);
-      setPaymentDetails({ phoneNumber: '', amount: 100, checkoutRequestID: null });
+      setPaymentDetails({ phoneNumber: '', amount: '100', checkoutRequestID: null });
     }, 2000);
   };
 
-  // --- Helpers ---
   const showMessage = (msg, type = 'success') => {
     setShowNotification({ message: msg, type });
     setTimeout(() => setShowNotification(null), 3000);
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: '' }));
-  };
-
-  const handleKitSelect = (kit) => {
-    setSelectedKit(kit);
-    setFormData(prev => ({ ...prev, kitId: kit.id }));
-    showMessage(`${kit.fullName} selected!`, 'success');
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = 'Name required';
-    if (!formData.phone.trim()) errors.phone = 'Phone required';
-    else if (!/^(\+254|0)[17]\d{8}$/.test(formData.phone)) errors.phone = 'Valid Kenyan phone required';
-    if (!formData.location && !locationAddress) errors.location = 'Location required';
-    return errors;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      showMessage('Please fix errors', 'error');
-      return;
-    }
-    
-    setIsSubmitting(true);
-    setTimeout(() => {
-      showMessage(`✅ Thank you ${formData.name}! Your ${selectedKit.fullName} will be delivered soon.`, 'success');
-      setIsSubmitting(false);
-      setShowSignUpModal(false);
-      setFormData({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
-      setLocationAddress("");
-    }, 1500);
   };
 
   const scrollTo = (id) => {
@@ -282,26 +349,26 @@ const App = () => {
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>Amount (KES)</label>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {[100, 200, 500, 1000].map(amt => (
-                <button key={amt} onClick={() => setPaymentDetails(prev => ({ ...prev, amount: amt }))} style={{
+                <button key={amt} type="button" onClick={() => setPaymentDetails(prev => ({ ...prev, amount: String(amt) }))} style={{
                   padding: '0.5rem 1rem',
-                  backgroundColor: paymentDetails.amount === amt ? '#2A9D8F' : '#f0f0f0',
-                  color: paymentDetails.amount === amt ? 'white' : '#333',
+                  backgroundColor: Number(paymentDetails.amount) === amt ? '#2A9D8F' : '#f0f0f0',
+                  color: Number(paymentDetails.amount) === amt ? 'white' : '#333',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}>KES {amt}</button>
               ))}
             </div>
-            <input type="number" value={paymentDetails.amount} onChange={e => setPaymentDetails(prev => ({ ...prev, amount: parseInt(e.target.value) || 0 }))} style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.5rem' }} />
+            <input type="text" inputMode="numeric" value={paymentDetails.amount} onChange={e => setPaymentDetails(prev => ({ ...prev, amount: e.target.value }))} style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.5rem' }} />
           </div>
           
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>M-PESA Phone Number</label>
-            <input type="tel" placeholder="0712345678" value={paymentDetails.phoneNumber} onChange={e => setPaymentDetails(prev => ({ ...prev, phoneNumber: e.target.value }))} style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px' }} />
+            <input autoFocus type="tel" placeholder="0712345678" value={paymentDetails.phoneNumber} onChange={e => setPaymentDetails(prev => ({ ...prev, phoneNumber: e.target.value }))} style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px' }} />
             <p style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>Enter the number registered on M-PESA</p>
           </div>
           
-          <button onClick={initiateMpesaPayment} disabled={processingPayment} style={{
+          <button type="button" onClick={initiateMpesaPayment} disabled={processingPayment} style={{
             width: '100%',
             padding: '0.75rem',
             backgroundColor: '#2A9D8F',
@@ -316,8 +383,7 @@ const App = () => {
             {processingPayment ? 'Sending STK Push...' : 'Pay with M-PESA →'}
           </button>
           
-          {/* Demo mode button (for testing without API) */}
-          <button onClick={simulateMpesaPayment} disabled={processingPayment} style={{
+          <button type="button" onClick={simulateMpesaPayment} disabled={processingPayment} style={{
             width: '100%',
             padding: '0.75rem',
             backgroundColor: '#f0f0f0',
@@ -335,7 +401,7 @@ const App = () => {
     );
   };
 
-  // --- Styles ---
+  // --- Theme Colors ---
   const theme = { primary: "#2A9D8F", primaryDark: "#1E6B61", secondary: "#E9C46A", accent: "#F4A261", dark: "#264653", light: "#F8F9FA", gray: "#6C757D", danger: "#E76F51" };
   
   const Button = ({ children, onClick, primary = true, small = false }) => (
@@ -352,13 +418,111 @@ const App = () => {
     }}>{children}</button>
   );
 
-  // --- SignUp Modal Component ---
-  const SignUpModal = () => {
+  // --- SIGNUP MODAL - COMPLETELY ISOLATED COMPONENT ---
+  // This component is defined outside to prevent re-renders
+  const SignUpModal = ({ showSignUpModal, locationAddress, formData, selectedKit }) => {
+    // All state is LOCAL to this component
+    const [localName, setLocalName] = useState('');
+    const [localPhone, setLocalPhone] = useState('');
+    const [localEmail, setLocalEmail] = useState('');
+    const [localInstructions, setLocalInstructions] = useState('');
+    const [localLocation, setLocalLocation] = useState('');
+    const [localSelectedKitId, setLocalSelectedKitId] = useState('6kg');
+    const [localErrors, setLocalErrors] = useState({});
+    const [localSubmitting, setLocalSubmitting] = useState(false);
+    const [searchQuery, setSearchQuery] = useState(locationAddress || '');
+
+    useEffect(() => {
+      if (showSignUpModal) {
+        setLocalName(formData.name);
+        setLocalPhone(formData.phone);
+        setLocalEmail(formData.email);
+        setLocalInstructions(formData.instructions);
+        setLocalLocation(locationAddress);
+        setSearchQuery(locationAddress || '');
+        setLocalSelectedKitId(selectedKit.id);
+        setLocalErrors({});
+      }
+    }, [showSignUpModal, formData, locationAddress, selectedKit.id]);
+    
     if (!showSignUpModal) return null;
     
+    const localSelectedKit = kitOptions.find(k => k.id === localSelectedKitId) || kitOptions[0];
+    
+    const validateForm = () => {
+      const errors = {};
+      if (!localName.trim()) errors.name = 'Name required';
+      if (!localPhone.trim()) errors.phone = 'Phone required';
+      else if (!/^(\+254|254|0)[17]\d{8}$/.test(localPhone)) errors.phone = 'Valid Kenyan phone required';
+      if (!localLocation) errors.location = 'Location required';
+      return errors;
+    };
+    
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      const errors = validateForm();
+      if (Object.keys(errors).length > 0) {
+        setLocalErrors(errors);
+        showMessage('Please fix errors', 'error');
+        return;
+      }
+      
+      setLocalSubmitting(true);
+      
+      // Update parent state
+      const finalLocation = localLocation || locationAddress;
+      setFormData({
+        name: localName,
+        phone: localPhone,
+        email: localEmail,
+        location: finalLocation,
+        kitId: localSelectedKitId,
+        instructions: localInstructions
+      });
+      setLocationAddress(finalLocation);
+      setSearchQuery(finalLocation || '');
+      setSelectedKit(localSelectedKit);
+      
+      setTimeout(() => {
+        showMessage(`✅ Thank you ${localName}! Your ${localSelectedKit.fullName} will be delivered soon.`, 'success');
+        setLocalSubmitting(false);
+        setShowSignUpModal(false);
+        setLocalName('');
+        setLocalPhone('');
+        setLocalEmail('');
+        setLocalInstructions('');
+        setLocalLocation('');
+        setFormData({ name: "", phone: "", email: "", location: "", kitId: "6kg", instructions: "" });
+        setLocationAddress("");
+      }, 1500);
+    };
+    
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: screenSize.isMobile ? '0.5rem' : '1rem' }} onClick={() => setShowSignUpModal(false)}>
-        <div style={{ backgroundColor: 'white', borderRadius: '24px', maxWidth: screenSize.isMobile ? '100%' : '900px', width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: screenSize.isMobile ? '1rem' : '1.5rem', position: 'relative' }} onClick={e => e.stopPropagation()}>
+      <div style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        bottom: 0, 
+        backgroundColor: 'rgba(0,0,0,0.8)', 
+        zIndex: 2000, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        padding: screenSize.isMobile ? '0.5rem' : '1rem',
+        overflowY: 'auto'
+      }} onClick={() => setShowSignUpModal(false)}>
+        <div style={{ 
+          backgroundColor: 'white', 
+          borderRadius: '24px', 
+          maxWidth: screenSize.isMobile ? '100%' : '900px', 
+          width: '100%', 
+          maxHeight: '85vh', 
+          overflowY: 'auto', 
+          padding: screenSize.isMobile ? '1rem' : '1.5rem', 
+          position: 'relative'
+        }} onClick={e => e.stopPropagation()}>
+          
           <button onClick={() => setShowSignUpModal(false)} style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
           
           <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem' }}>Get Your Free Kit 🎁</h2>
@@ -366,7 +530,7 @@ const App = () => {
           {/* Kit Selection */}
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
             {kitOptions.map(kit => (
-              <div key={kit.id} onClick={() => handleKitSelect(kit)} style={{ border: `2px solid ${selectedKit.id === kit.id ? theme.primary : '#ddd'}`, borderRadius: '12px', padding: '0.75rem', cursor: 'pointer', backgroundColor: selectedKit.id === kit.id ? `${theme.primary}10` : 'white' }}>
+              <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} style={{ border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : '#ddd'}`, borderRadius: '12px', padding: '0.75rem', cursor: 'pointer', backgroundColor: localSelectedKitId === kit.id ? `${theme.primary}10` : 'white' }}>
                 <div style={{ fontSize: '1.5rem' }}>{kit.icon}</div>
                 <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{kit.fullName}</div>
                 <div style={{ fontSize: '0.7rem', color: theme.gray }}>{kit.size} {kit.cooker}</div>
@@ -377,28 +541,56 @@ const App = () => {
           
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '0.75rem' }}>
+              {/* LEFT COLUMN */}
               <div>
-                <input type="text" name="name" placeholder="Full Name *" value={formData.name} onChange={handleInputChange} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${formErrors.name ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem' }} />
-                <input type="tel" name="phone" placeholder="Phone Number *" value={formData.phone} onChange={handleInputChange} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${formErrors.phone ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem' }} />
-                <input type="email" name="email" placeholder="Email (optional)" value={formData.email} onChange={handleInputChange} style={{ width: '100%', padding: '0.6rem', border: '1px solid #ddd', borderRadius: '8px' }} />
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Full Name *</label>
+                  <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                  {localErrors.name && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
+                </div>
+                
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Phone Number *</label>
+                  <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} placeholder="0712345678" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.danger : '#ddd'}`, borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                  {localErrors.phone && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
+                </div>
+                
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.dark }}>Email Address</label>
+                  <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} placeholder="john@example.com" autoComplete="off" style={{ width: '100%', padding: '0.75rem', border: '1px solid #ddd', borderRadius: '8px', fontSize: '1rem', boxSizing: 'border-box' }} />
+                </div>
               </div>
+              
+              {/* RIGHT COLUMN */}
               <div>
                 {!useSimpleMap ? (
-                  <div ref={mapRef} style={{ height: '150px', borderRadius: '8px', border: `2px solid ${formErrors.location ? theme.danger : theme.primary}`, marginBottom: '0.5rem', backgroundColor: '#f0f0f0' }}>
-                    {!mapLoaded && <div style={{ padding: '0.5rem', textAlign: 'center', fontSize: '0.8rem' }}>Loading map... <button onClick={() => setUseSimpleMap(true)} style={{ display: 'block', margin: '0.5rem auto', background: theme.primary, color: 'white', border: 'none', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>Manual Entry</button></div>}
-                  </div>
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '2fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <input type="text" placeholder="Search delivery address" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', boxSizing: 'border-box' }} />
+                      <button type="button" onClick={searchLocation} style={{ background: theme.primary, color: 'white', border: 'none', borderRadius: '8px', padding: '0.75rem', cursor: 'pointer' }}>Find</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <button type="button" onClick={useCurrentLocation} style={{ flex: 1, background: theme.secondary, color: theme.dark, border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>Use My Location</button>
+                      <button type="button" onClick={() => setUseSimpleMap(true)} style={{ flex: 1, background: '#f0f0f0', color: theme.dark, border: `1px solid ${theme.primary}`, borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>Manual Entry</button>
+                    </div>
+                    <div ref={mapRef} style={{ height: '220px', borderRadius: '12px', border: `2px solid ${localErrors.location ? theme.danger : theme.primary}`, marginBottom: '0.5rem', backgroundColor: '#f0f0f0' }}>
+                      {!mapLoaded && <div style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.8rem' }}>Loading map... Please wait.</div>}
+                    </div>
+                  </>
                 ) : (
-                  <input type="text" placeholder="Enter delivery address" value={locationAddress} onChange={e => { setLocationAddress(e.target.value); setFormData(prev => ({ ...prev, location: e.target.value })); }} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${formErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem' }} />
+                  <input type="text" placeholder="Enter delivery address" value={localLocation} onChange={e => { setLocalLocation(e.target.value); setLocationAddress(e.target.value); }} style={{ width: '100%', padding: '0.6rem', border: `1px solid ${localErrors.location ? theme.danger : '#ddd'}`, borderRadius: '8px', marginBottom: '0.5rem', boxSizing: 'border-box' }} />
                 )}
-                {locationAddress && <div style={{ fontSize: '0.7rem', color: theme.gray, marginTop: '0.25rem' }}>📍 {locationAddress.substring(0, 60)}</div>}
+                {(localLocation || locationAddress) && <div style={{ fontSize: '0.7rem', color: theme.gray, marginTop: '0.25rem' }}>📍 {localLocation || locationAddress}</div>}
+                {locationStatus && <div style={{ fontSize: '0.75rem', color: '#555', marginTop: '0.25rem' }}>{locationStatus}</div>}
+                {localErrors.location && <p style={{ color: theme.danger, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
               </div>
             </div>
             
-            <textarea name="instructions" placeholder="Special instructions (gate code, landmark...)" value={formData.instructions} onChange={handleInputChange} rows="2" style={{ width: '100%', padding: '0.6rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.75rem' }} />
+            <textarea value={localInstructions} onChange={e => setLocalInstructions(e.target.value)} placeholder="Special instructions (gate code, landmark...)" rows="2" style={{ width: '100%', padding: '0.6rem', border: '1px solid #ddd', borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', boxSizing: 'border-box' }} />
             
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <Button onClick={() => setShowSignUpModal(false)} primary={false}>Cancel</Button>
-              <button type="submit" disabled={isSubmitting} style={{ background: theme.primary, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>{isSubmitting ? 'Processing...' : 'Get Free Kit →'}</button>
+              <button type="button" onClick={() => setShowSignUpModal(false)} style={{ background: 'white', color: theme.primary, border: `2px solid ${theme.primary}`, padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
+              <button type="submit" disabled={localSubmitting} style={{ background: theme.primary, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', opacity: localSubmitting ? 0.7 : 1, fontSize: '0.9rem' }}>{localSubmitting ? 'Processing...' : 'Get Free Kit →'}</button>
             </div>
           </form>
         </div>
@@ -406,14 +598,18 @@ const App = () => {
     );
   };
 
-  // --- Main Render ---
+  // --- MAIN RENDER ---
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', backgroundColor: theme.light, minHeight: '100vh' }}>
-      <style>{`@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+      <style>{`
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+        input, textarea, button { font-family: inherit; }
+      `}</style>
       
       {showNotification && <div style={{ position: 'fixed', top: '70px', right: '10px', left: screenSize.isMobile ? '10px' : 'auto', backgroundColor: showNotification.type === 'error' ? theme.danger : (showNotification.type === 'warning' ? theme.accent : theme.primary), color: 'white', padding: '0.75rem', borderRadius: '8px', zIndex: 1001, animation: 'slideIn 0.3s ease', textAlign: 'center', maxWidth: screenSize.isMobile ? 'auto' : '350px' }}>{showNotification.message}</div>}
       
       <PaymentModal />
+      <SignUpModal showSignUpModal={showSignUpModal} locationAddress={locationAddress} formData={formData} selectedKit={selectedKit} />
       
       {/* Header */}
       <header style={{ background: 'white', padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
@@ -506,8 +702,6 @@ const App = () => {
         <p style={{ marginTop: '0.5rem' }}>📞 +254717052939 | ✉️ hello@okoagas.com</p>
         <p style={{ fontSize: '0.7rem', marginTop: '0.5rem' }}>M-PESA Paybill: 123456 | Account: Your Phone Number</p>
       </footer>
-      
-      <SignUpModal />
     </div>
   );
 };
