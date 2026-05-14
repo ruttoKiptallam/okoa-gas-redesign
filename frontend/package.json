@@ -2,6 +2,7 @@
   "name": "okoa-gas-frontend",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
     "puppeteer": "^24.43.1",
     "react": "^19.2.6",
