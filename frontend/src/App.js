@@ -3,13 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 // Real image URLs from reliable sources
 const images = {
   gasHero: 'https://images.unsplash.com/photo-1513281362764-6f858a0e5c4b?auto=format&fit=crop&w=800&q=80',
-  deliveryTruck: 'frontend/images/Quick Delivery.webp',
-  mobilePayment: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80',
-  gasRefills: 'frontend/images/Gas Refills.webp=80',
-  cylinderKits: 'frontend/images/New Cylinder Kits.webp',
-  compositeCylinders: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=600&q=80',
-  lpgAccessories: 'frontend/images/LPG Accessories.webp',
-  smartMeters: 'frontend/images/Smart Meters.webp',
+  deliveryTruck: '/assets/images/Quick Delivery.webp',
+  mobilePayment: 'https://github.com/ruttoKiptallam/okoa-gas-redesign/blob/main/frontend/src/assets/images/Mpesa%20Payment.webp',
+  gasRefills: '/assets/images/Gas Refills.webp=80',
+  cylinderKits: '/assets/images/New Cylinder Kits.webp',
+  compositeCylinders: 'https://github.com/ruttoKiptallam/okoa-gas-redesign/blob/main/frontend/src/assets/images/Mpesa%20Payment.webp',
+  lpgAccessories: '/assets/images/LPG Accessories.webp',
+  smartMeters: '/assets/images/Smart Meters.webp',
   stepOrder: 'https://images.unsplash.com/photo-150784272343-583f20270319?auto=format&fit=crop&w=600&q=80',
   stepInstallation: 'https://images.unsplash.com/photo-1516534775068-bb57100d4f10?auto=format&fit=crop&w=600&q=80',
   stepTopup: 'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=600&q=80'
