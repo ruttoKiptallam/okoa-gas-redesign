@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Real image URLs from reliable sources
+const images = {
+  gasHero: 'https://images.unsplash.com/photo-1513281362764-6f858a0e5c4b?auto=format&fit=crop&w=800&q=80',
+  deliveryTruck: 'frontend/images/Quick Delivery.webp',
+  mobilePayment: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80',
+  gasRefills: 'frontend/images/Gas Refills.webp=80',
+  cylinderKits: 'frontend/images/New Cylinder Kits.webp',
+  compositeCylinders: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=600&q=80',
+  lpgAccessories: 'frontend/images/LPG Accessories.webp',
+  smartMeters: 'frontend/images/Smart Meters.webp',
+  stepOrder: 'https://images.unsplash.com/photo-150784272343-583f20270319?auto=format&fit=crop&w=600&q=80',
+  stepInstallation: 'https://images.unsplash.com/photo-1516534775068-bb57100d4f10?auto=format&fit=crop&w=600&q=80',
+  stepTopup: 'https://images.unsplash.com/photo-1556656793-08538906a9f8?auto=format&fit=crop&w=600&q=80'
+};
+
 const App = () => {
   // --- State ---
   const [gasLevel] = useState(85);
@@ -603,6 +618,10 @@ const App = () => {
     <div style={{ fontFamily: 'system-ui, sans-serif', backgroundColor: theme.light, minHeight: '100vh' }}>
       <style>{`
         @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 rgba(42,157,143,0.3); } 50% { box-shadow: 0 0 20px rgba(42,157,143,0.2); } }
+        .hero-animate { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
+        .feature-card { animation: fadeInUp 0.7s ease forwards; opacity: 0; }
         input, textarea, button { font-family: inherit; }
       `}</style>
       
@@ -634,8 +653,171 @@ const App = () => {
           <Button onClick={() => setShowSignUpModal(true)}>Get Your Free Kit →</Button>
           <Button onClick={() => setShowPaymentModal(true)} primary={false}>Top Up M-PESA</Button>
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1rem', alignItems: 'center', marginTop: '2rem' }}>
+          <div className="hero-animate" style={{ padding: '1.5rem', background: '#eef8f7', borderRadius: '24px', boxShadow: '0 18px 40px rgba(42,157,143,0.08)' }}>
+            <h3 style={{ margin: 0, color: theme.primary }}>Why customers love OKOA GAS</h3>
+            <ul style={{ marginTop: '1rem', paddingLeft: '1.1rem', color: theme.dark, lineHeight: 1.8 }}>
+              <li>Free kit delivered in 24 hours</li>
+              <li>Pay only for what you use via M-PESA</li>
+              <li>Instant gas level tracking from your phone</li>
+              <li>Safe, certified installation and service</li>
+            </ul>
+          </div>
+          <div className="hero-animate" style={{ borderRadius: '24px', overflow: 'hidden', minHeight: '240px', position: 'relative', background: '#ddd' }}>
+            <img src={images.gasHero} alt="Clean cooking" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'brightness(0.9)' }} />
+            <div style={{ position: 'absolute', bottom: '1rem', left: '1rem', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.85)', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.12)' }}>
+              <strong style={{ color: theme.primary }}>Smart delivery + cashless payment.</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem', marginTop: '2rem' }}>
+          {[
+            { title: 'Fast Refill', text: 'Gas delivered within hours for all standard cylinder sizes.' },
+            { title: 'Complete Kits', text: 'Cylinder, regulator, hose, and burner included for seamless setup.' },
+            { title: 'Pay-as-you-go', text: 'M-PESA top-up and smart meter support for flexible spending.' }
+          ].map((item, index) => (
+            <div key={index} className="feature-card" style={{ padding: '1.25rem', borderRadius: '20px', background: 'white', boxShadow: '0 16px 32px rgba(0,0,0,0.06)', border: '1px solid #f0f4f8' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: '700', color: theme.primary, marginBottom: '0.75rem' }}>{item.title}</div>
+              <p style={{ margin: 0, color: theme.gray, lineHeight: 1.7 }}>{item.text}</p>
+            </div>
+          ))}
+        </div>
       </div>
       
+      {/* Gallery Section */}
+      <div style={{ background: '#f7fdfb', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem', margin: 0, color: theme.dark }}>Our Services in Action</h2>
+            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.gray }}>See how OKOA GAS delivers clean cooking solutions to homes and businesses across Kenya.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: '1rem' }}>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 0.8s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
+              <img src={images.deliveryTruck} alt="Quick Delivery" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem', background: '#fff' }}>
+                <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Quick Delivery</h3>
+                <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Stove-ready LPG cylinders delivered within hours to your doorstep.</p>
+              </div>
+            </div>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 0.9s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
+              <img src={images.mobilePayment} alt="Secure Payment" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem', background: '#fff' }}>
+                <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Secure Payment</h3>
+                <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Pay instantly with M-PESA. No cash, no hassle, full transparency.</p>
+              </div>
+            </div>
+            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', animation: 'fadeInUp 1s ease forwards', opacity: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
+              <img src={images.smartMeters} alt="Smart Tracking" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+              <div style={{ padding: '1.5rem', background: '#fff' }}>
+                <h3 style={{ margin: '0 0 0.5rem', color: theme.primary }}>Smart Tracking</h3>
+                <p style={{ margin: 0, color: theme.gray, lineHeight: 1.6 }}>Monitor your gas usage in real-time and never run out unexpectedly.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* How It Works */}
+      <div style={{ background: '#ffffff', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', textAlign: 'center' }}>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ color: theme.secondary, fontWeight: 700, marginBottom: '0.5rem' }}>Simple setup, smart cooking</div>
+            <h2 style={{ fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem', margin: 0, color: theme.dark }}>How OKOA GAS works</h2>
+            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.gray }}>From ordering your kit to topping up gas and tracking consumption, we make LPG easy and safe.</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: '1rem' }}>
+            {[
+              { image: images.stepOrder, title: 'Order your cylinder', text: 'Choose from 3kg, 6kg, 13kg, 22.5kg or 50kg refill sizes and complete starter kits.' },
+              { image: images.stepInstallation, title: 'Installation & delivery', text: 'We deliver and install your cylinder, regulator, hose and burner safely.' },
+              { image: images.stepTopup, title: 'Top up & track', text: 'Use M-PESA to top up and monitor usage with smart meter support.' }
+            ].map((item, index) => (
+              <div key={index} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f7fdfb', boxShadow: '0 18px 40px rgba(42,157,143,0.08)', textAlign: 'center' }}>
+                <img src={item.image} alt={item.title} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} onError={(e) => e.target.style.display = 'none'} />
+                <h3 style={{ margin: '0.5rem 0', color: theme.dark }}>{item.title}</h3>
+                <p style={{ margin: 0, color: theme.gray, lineHeight: 1.7 }}>{item.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Product & Service Overview */}
+      <div style={{ background: '#ffffff', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <div style={{ fontSize: '0.9rem', color: theme.secondary, fontWeight: '700' }}>What We Offer</div>
+            <h2 style={{ fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem', margin: '0.5rem 0', color: theme.dark }}>Gas refills, kits, accessories and smart LPG services</h2>
+            <p style={{ maxWidth: '700px', margin: '0 auto', color: theme.gray }}>Simple, transparent choices for every household and business — from small cylinders to pay-as-you-go smart meters.</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '1rem' }}>
+            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f7fdfb', boxShadow: '0 18px 40px rgba(42,157,143,0.08)', textAlign: 'center' }}>
+              <img src={images.gasRefills} alt="Gas Refills" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ marginTop: 0, color: theme.primary }}>Gas Refills</h3>
+              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Choose from our standard cylinder sizes for the right balance of convenience and cooking power.</p>
+              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
+                <li>3kg compact refill</li>
+                <li>6kg everyday home refill</li>
+                <li>13kg family refill</li>
+                <li>22.5kg larger cooking refill</li>
+                <li>50kg commercial refill</li>
+              </ul>
+            </div>
+
+            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#f4f7ff', boxShadow: '0 18px 40px rgba(40,80,180,0.08)', textAlign: 'center' }}>
+              <img src={images.cylinderKits} alt="Cylinder Kits" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ marginTop: 0, color: theme.primary }}>New Cylinder Kits</h3>
+              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Complete starter packages that include everything you need to begin cooking safely.</p>
+              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
+                <li>Cylinder</li>
+                <li>Regulator</li>
+                <li>Hosepipe</li>
+                <li>Burner</li>
+                <li>Installation-ready setup</li>
+              </ul>
+            </div>
+
+            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#fff6f4', boxShadow: '0 18px 40px rgba(231,111,81,0.08)', textAlign: 'center' }}>
+              <img src={images.compositeCylinders} alt="Composite Cylinders" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ marginTop: 0, color: theme.primary }}>Composite Cylinders</h3>
+              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Lightweight, durable cylinder options designed for easy handling and safe refills.</p>
+              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
+                <li>6kg composite cylinder</li>
+                <li>13kg composite cylinder</li>
+                <li>Strong, corrosion-resistant material</li>
+                <li>Sleek modern design</li>
+              </ul>
+            </div>
+
+            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: '#fff8e1', boxShadow: '0 18px 40px rgba(228,155,15,0.08)', textAlign: 'center' }}>
+              <img src={images.lpgAccessories} alt="LPG Accessories" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ marginTop: 0, color: theme.primary }}>LPG Accessories</h3>
+              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Everything you need to keep your LPG system safe, efficient and ready to use.</p>
+              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
+                <li>Low and high pressure regulators</li>
+                <li>Hosepipes and burners</li>
+                <li>Igniters, grills and lanterns</li>
+                <li>Replacement parts and upgrades</li>
+              </ul>
+            </div>
+
+            <div className="feature-card" style={{ gridColumn: screenSize.isMobile ? 'auto' : 'span 2', padding: '1.5rem', borderRadius: '24px', background: '#eef8ff', boxShadow: '0 18px 40px rgba(42,157,233,0.08)', textAlign: 'center' }}>
+              <img src={images.smartMeters} alt="Smart Meters" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ marginTop: 0, color: theme.primary }}>Smart Meters</h3>
+              <p style={{ color: theme.dark, marginBottom: '1rem' }}>Track gas use and pay-as-you-go with smart metering for selected LPG systems.</p>
+              <ul style={{ paddingLeft: '1.15rem', color: theme.gray, lineHeight: 1.8, textAlign: 'left' }}>
+                <li>Real-time usage monitoring</li>
+                <li>Pay only for gas consumed</li>
+                <li>Ideal for households and small businesses</li>
+                <li>Easy connection with our M-PESA payment flow</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Balance Display Card */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 1rem' }}>
         <div style={{ background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%)`, borderRadius: '20px', padding: '1.5rem', color: 'white', textAlign: 'center' }}>

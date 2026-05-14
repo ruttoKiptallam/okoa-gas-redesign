@@ -12,12 +12,24 @@
 # production / build outputs
 /build
 /frontend/build
+/okoa-gas-backend/build
+/dist
+*.tgz
+*.tar.gz
 
 # logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
 
 # environment files
 .env
@@ -33,6 +45,29 @@ okoa-gas-backend/.env*
 # OS files
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
 # sensitive files
 *.mpesa
+*.key
+*.pem
+secrets.json
+
+# cache directories
+.cache/
+.tmp/
+temp/
+*.cache
+
+# misc
+.nyc_output
+.eslintcache
+.parcel-cache
