@@ -1312,20 +1312,89 @@ Thank you for choosing OKOA GAS!`;
         </div>
       </div>
       
-      {/* M-PESA Instructions */}
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
-        <div style={{ background: darkMode ? '#2a2a2a' : '#f0fdf4', borderRadius: '16px', padding: '1rem', borderLeft: `4px solid ${theme.primary}` }}>
-          <h3 style={{ color: theme.primary, marginBottom: '0.5rem', fontWeight: '600', fontSize: '1.1rem' }}>💰 How to Pay via M-PESA</h3>
-          <ol style={{ marginLeft: '1rem', color: theme.textLight, fontSize: '0.9rem' }}>
-            <li>Click "Top Up M-PESA" button</li>
-            <li>Enter your M-PESA registered phone number</li>
-            <li>Enter amount (minimum KES 100)</li>
-            <li>You'll receive an STK Push on your phone</li>
-            <li>Enter your M-PESA PIN to complete payment</li>
-            <li>Gas balance updates instantly!</li>
-          </ol>
+      {/* Payment Options Section - M-PESA & Cash Side by Side */}
+<div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
+  <div style={{
+    display: 'grid',
+    gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr',
+    gap: '1.5rem'
+  }}>
+    
+    {/* M-PESA Instructions Card */}
+    <div style={{
+      background: darkMode ? '#2a2a2a' : '#f0fdf4',
+      borderRadius: '20px',
+      padding: '1.5rem',
+      borderLeft: `4px solid ${theme.primary}`,
+      transition: 'transform 0.3s ease',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ fontSize: '2rem' }}>💰</div>
+        <h3 style={{ color: theme.primary, margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>M-PESA Payment</h3>
+      </div>
+      <ol style={{ marginLeft: '1rem', color: theme.textLight, fontSize: '0.9rem', paddingLeft: '0.5rem' }}>
+        <li style={{ marginBottom: '0.5rem' }}>Click "Top Up M-PESA" button</li>
+        <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA registered phone number</li>
+        <li style={{ marginBottom: '0.5rem' }}>Enter amount (minimum KES 100)</li>
+        <li style={{ marginBottom: '0.5rem' }}>You'll receive an STK Push on your phone</li>
+        <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA PIN to complete payment</li>
+        <li>Gas balance updates instantly!</li>
+      </ol>
+      <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}` }}>
+        <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0 }}>
+          🔒 Secure transactions via Safaricom M-PESA
+        </p>
+      </div>
+    </div>
+    
+    {/* Cash Payment Card */}
+    <div style={{
+      background: darkMode ? '#1e2a2e' : '#fef9e8',
+      borderRadius: '20px',
+      padding: '1.5rem',
+      borderLeft: `4px solid #D4A84A`,
+      transition: 'transform 0.3s ease',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ fontSize: '2rem' }}>💵</div>
+        <h3 style={{ color: '#D4A84A', margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>Cash Payment</h3>
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <p style={{ color: theme.textLight, fontSize: '0.9rem', marginBottom: '0.5rem', lineHeight: '1.5' }}>
+          Prefer to pay with cash? No problem! Our agents will collect payment upon delivery.
+        </p>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Pay cash on delivery</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>No additional transaction fees</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Receive receipt on payment</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Available for all kit types</span>
         </div>
       </div>
+      <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a4a4f' : '#e8dcc8'}` }}>
+        <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span>📞 Call us:</span>
+          <strong style={{ color: '#D4A84A' }}>+254717052939</strong>
+          <span>to arrange cash payment</span>
+        </p>
+      </div>
+    </div>
+    
+  </div>
+</div>
       
       {/* ORIGINAL FOOTER - RETAINED */}
       <footer style={{ background: '#1a2c38', color: '#94a3b8', padding: '3rem 2rem 1.5rem' }}>
