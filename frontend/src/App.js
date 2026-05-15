@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 // ============================================
 // ALL IMAGE IMPORTS - LOCAL .WEBP FILES
@@ -89,7 +89,7 @@ const App = () => {
   // --- Dark Mode State ---
   const [darkMode, setDarkMode] = useState(false);
   
-  // --- Modal Key for Reset (Prevents useEffect warnings) ---
+  // --- Modal Key for Reset ---
   const [modalKey, setModalKey] = useState(0);
   
   // --- State ---
@@ -100,8 +100,15 @@ const App = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [screenSize, setScreenSize] = useState({
     isMobile: window.innerWidth < 768,
-    width: window.innerWidth
+    width: window.innerWidth,
+    height: window.innerHeight,
+    orientation: window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   });
+  
+  // --- Payment State (Prevents Flicker) ---
+  const [paymentPhone, setPaymentPhone] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('100');
+  const [processingPayment, setProcessingPayment] = useState(false);
   
   // --- API Base URL ---
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -118,40 +125,52 @@ const App = () => {
   // --- Map State ---
   const [mapLoaded, setMapLoaded] = useState(false);
   const [useSimpleMap, setUseSimpleMap] = useState(false);
-  const mapRef = useRef(null);
-  const [coordinates, setCoordinates] = useState({ lat: -1.286389, lng: 36.817223 });
   const [mapInitialized, setMapInitialized] = useState(false);
+  const mapContainerRef = useRef(null);
+  const [coordinates, setCoordinates] = useState({ lat: -1.286389, lng: 36.817223 });
   
   // --- Open modal with reset key ---
-  const openSignUpModal = () => {
+  const openSignUpModal = useCallback(() => {
     setShowSignUpModal(true);
     setModalKey(prev => prev + 1);
-  };
+  }, []);
 
-  // --- Notification System (Top-right corner) ---
-  const showMessage = (msg, type = 'success') => {
+  // --- Notification System ---
+  const showMessage = useCallback((msg, type = 'success') => {
     setShowNotification({ message: msg, type });
     setTimeout(() => setShowNotification(null), 4000);
-  };
+  }, []);
 
   // --- Screen Resize Handler ---
   useEffect(() => {
     const handleResize = () => {
+      const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
       setScreenSize({
         isMobile: window.innerWidth < 768,
-        width: window.innerWidth
+        width: window.innerWidth,
+        height: window.innerHeight,
+        orientation: newOrientation
       });
-      if (showSignUpModal && window.currentMap) {
-        setTimeout(() => window.currentMap?.invalidateSize(), 200);
+      
+      if (window.currentMap && !useSimpleMap) {
+        setTimeout(() => {
+          window.currentMap.invalidateSize();
+        }, 200);
       }
     };
+    
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [showSignUpModal]);
+    window.addEventListener('orientationchange', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [useSimpleMap]);
 
   // --- Load Leaflet Map CSS and JS ---
   useEffect(() => {
-    if (showSignUpModal && !mapLoaded) {
+    if (showSignUpModal && !mapLoaded && !useSimpleMap) {
       if (typeof window.L !== 'undefined') {
         setMapLoaded(true);
         return;
@@ -168,67 +187,64 @@ const App = () => {
         setMapLoaded(true);
       };
       script.onerror = () => {
-        console.error('Failed to load Leaflet map');
+        console.error('Map load failed');
         showMessage('Map failed to load. Please use manual address entry.', 'warning');
+        setUseSimpleMap(true);
       };
       document.head.appendChild(script);
     }
-  }, [showSignUpModal, mapLoaded]);
+  }, [showSignUpModal, mapLoaded, useSimpleMap, showMessage]);
 
-  // --- Initialize Map when modal opens ---
+  // --- Initialize Map ---
   useEffect(() => {
-    if (showSignUpModal && mapLoaded && mapRef.current && !mapInitialized && !useSimpleMap) {
-      const timer = setTimeout(() => {
-        if (!mapRef.current) return;
-        
+    if (!showSignUpModal || !mapLoaded || useSimpleMap || !mapContainerRef.current) return;
+    if (mapInitialized) return;
+    
+    const timer = setTimeout(() => {
+      try {
         if (window.currentMap) {
           window.currentMap.remove();
           window.currentMap = null;
         }
         
-        try {
-          const map = window.L.map(mapRef.current).setView([coordinates.lat, coordinates.lng], 14);
-          
-          // Tile layer added directly (removed unused variable)
-          window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
-            subdomains: 'abcd',
-            maxZoom: 19,
-            minZoom: 10
-          }).addTo(map);
-          
-          const marker = window.L.marker([coordinates.lat, coordinates.lng], { draggable: true }).addTo(map);
-          
-          marker.on('dragend', async (e) => {
-            const pos = marker.getLatLng();
-            setCoordinates({ lat: pos.lat, lng: pos.lng });
-            await reverseGeocode(pos.lat, pos.lng);
-          });
-          
-          map.on('click', async (e) => {
-            marker.setLatLng(e.latlng);
-            setCoordinates({ lat: e.latlng.lat, lng: e.latlng.lng });
-            await reverseGeocode(e.latlng.lat, e.latlng.lng);
-          });
-          
-          window.currentMap = map;
-          window.currentMarker = marker;
-          setMapInitialized(true);
-          
-          setTimeout(() => {
-            map.invalidateSize();
-          }, 200);
-          
-        } catch (error) {
-          console.error('Map initialization error:', error);
-          showMessage('Map failed to initialize. Please use manual address entry.', 'warning');
-          setUseSimpleMap(true);
-        }
-      }, 300);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [showSignUpModal, mapLoaded, coordinates, useSimpleMap, mapInitialized]);
+        const map = window.L.map(mapContainerRef.current).setView([coordinates.lat, coordinates.lng], 14);
+        
+        window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+          subdomains: 'abcd',
+          maxZoom: 19,
+          minZoom: 10
+        }).addTo(map);
+        
+        const marker = window.L.marker([coordinates.lat, coordinates.lng], { draggable: true }).addTo(map);
+        
+        marker.on('dragend', async (e) => {
+          const pos = marker.getLatLng();
+          setCoordinates({ lat: pos.lat, lng: pos.lng });
+          await reverseGeocode(pos.lat, pos.lng);
+        });
+        
+        map.on('click', async (e) => {
+          marker.setLatLng(e.latlng);
+          setCoordinates({ lat: e.latlng.lat, lng: e.latlng.lng });
+          await reverseGeocode(e.latlng.lat, e.latlng.lng);
+        });
+        
+        window.currentMap = map;
+        window.currentMarker = marker;
+        setMapInitialized(true);
+        
+        setTimeout(() => map.invalidateSize(), 100);
+        
+      } catch (error) {
+        console.error('Map error:', error);
+        showMessage('Map failed to initialize. Using manual address entry.', 'warning');
+        setUseSimpleMap(true);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [showSignUpModal, mapLoaded, useSimpleMap, coordinates, mapInitialized, showMessage]);
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -243,20 +259,19 @@ const App = () => {
   };
 
   // --- Get Current Location ---
-  const getCurrentLocation = () => {
+  const getCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      showMessage('Geolocation is not supported. Please enter address manually.', 'warning');
+      showMessage('Geolocation not supported. Please enter address manually.', 'warning');
       setUseSimpleMap(true);
       return;
     }
     
-    showMessage('📍 Getting your current location...', 'info');
+    showMessage('📍 Getting your location...', 'info');
     
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        const newCoords = { lat: latitude, lng: longitude };
-        setCoordinates(newCoords);
+        setCoordinates({ lat: latitude, lng: longitude });
         
         if (window.currentMap && window.currentMarker) {
           window.currentMap.setView([latitude, longitude], 16);
@@ -266,34 +281,148 @@ const App = () => {
         try {
           const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
           const data = await response.json();
-          if (data?.display_name) {
-            if (window.updateLocationDisplay) {
-              window.updateLocationDisplay(data.display_name);
-            }
-            showMessage('✅ Current location detected! Drag pin to adjust if needed.', 'success');
+          if (data?.display_name && window.updateLocationDisplay) {
+            window.updateLocationDisplay(data.display_name);
           }
+          showMessage('✅ Location detected! Drag pin to adjust.', 'success');
         } catch (error) {
-          showMessage('📍 Location captured! You can drag the pin to adjust.', 'success');
+          showMessage('📍 Location captured! You can drag pin to adjust.', 'success');
         }
       },
       (error) => {
-        let errorMessage = 'Unable to get your location. ';
-        switch(error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage += 'Please allow location access.';
-            break;
-          case error.TIMEOUT:
-            errorMessage += 'Request timed out. Please try again.';
-            break;
-          default:
-            errorMessage += 'Please enter address manually.';
+        let msg = 'Unable to get location. ';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg += 'Please allow location access.';
+        } else {
+          msg += 'Please enter address manually.';
         }
-        showMessage(errorMessage, 'error');
+        showMessage(msg, 'error');
         setUseSimpleMap(true);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
-  };
+  }, [showMessage]);
+
+  // --- Phone Number Normalization ---
+  const normalizeMpesaPhone = useCallback((phone) => {
+    if (!phone) return '';
+    let cleaned = phone.toString().replace(/[\s\-()]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+    if (cleaned.startsWith('00')) cleaned = cleaned.slice(2);
+    if (cleaned.startsWith('0') && cleaned.length === 10) cleaned = '254' + cleaned.slice(1);
+    else if (cleaned.startsWith('7') && cleaned.length === 9) cleaned = '254' + cleaned;
+    if (!/^254[17]\d{8}$/.test(cleaned)) return null;
+    return cleaned;
+  }, []);
+
+  // --- M-PESA Payment Functions ---
+  const initiateMpesaPayment = useCallback(async () => {
+    if (!paymentPhone) {
+      showMessage('Please enter your M-PESA phone number', 'error');
+      return;
+    }
+
+    const formattedPhone = normalizeMpesaPhone(paymentPhone);
+    if (!formattedPhone) {
+      showMessage('Enter a valid Kenyan phone number (e.g., 0712345678)', 'error');
+      return;
+    }
+
+    const amountValue = Number(paymentAmount);
+    if (!amountValue || amountValue < 100) {
+      showMessage('Enter an amount of at least KES 100', 'error');
+      return;
+    }
+
+    setProcessingPayment(true);
+    showMessage('Sending STK Push to your phone...', 'info');
+    
+    try {
+      const response = await fetch(`${API_URL}/api/mpesa/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: formattedPhone,
+          amount: amountValue,
+          accountReference: `OKOA-${Date.now()}`,
+          description: `OKOA GAS top up - KES ${amountValue}`
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        showMessage('✅ STK Push sent! Enter your M-PESA PIN.', 'success');
+        pollPaymentStatus(data.checkoutRequestID);
+      } else {
+        showMessage(data.message || 'Payment failed', 'error');
+        setProcessingPayment(false);
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      showMessage('Network error. Please try again.', 'error');
+      setProcessingPayment(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentPhone, paymentAmount, API_URL, normalizeMpesaPhone, showMessage]);
+
+  const pollPaymentStatus = useCallback((checkoutRequestID) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const response = await fetch(`${API_URL}/api/mpesa/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkoutRequestID })
+        });
+        const data = await response.json();
+        
+        if (data.ResultCode === '0') {
+          clearInterval(interval);
+          const amountValue = Number(paymentAmount);
+          setBalance(prev => prev + amountValue);
+          showMessage(`💰 Payment successful! Added KES ${amountValue}. New balance: KES ${(balance + amountValue).toFixed(2)}`, 'success');
+          setProcessingPayment(false);
+          setShowPaymentModal(false);
+          setPaymentPhone('');
+          setPaymentAmount('100');
+        } else if (data.ResultCode !== '1037') {
+          clearInterval(interval);
+          showMessage('Payment failed or cancelled', 'error');
+          setProcessingPayment(false);
+        }
+      } catch (error) {
+        console.error('Status check error:', error);
+      }
+      if (attempts >= 30) {
+        clearInterval(interval);
+        if (processingPayment) {
+          showMessage('Payment timeout. Check your M-PESA messages.', 'warning');
+          setProcessingPayment(false);
+        }
+      }
+    }, 2000);
+  }, [paymentAmount, balance, API_URL, showMessage, processingPayment]);
+
+  const simulateMpesaPayment = useCallback(() => {
+    if (!paymentPhone) {
+      showMessage('Please enter your M-PESA phone number', 'error');
+      return;
+    }
+    setProcessingPayment(true);
+    showMessage('Simulating M-PESA payment...', 'info');
+    
+    setTimeout(() => {
+      const amountValue = Number(paymentAmount);
+      setBalance(prev => prev + amountValue);
+      showMessage(`✅ Demo Payment successful! Added KES ${paymentAmount}. New balance: KES ${(balance + amountValue).toFixed(2)}`, 'success');
+      setProcessingPayment(false);
+      setShowPaymentModal(false);
+      setPaymentPhone('');
+      setPaymentAmount('100');
+    }, 2000);
+  }, [paymentPhone, paymentAmount, balance, showMessage]);
 
   // --- Theme Colors ---
   const theme = useMemo(() => {
@@ -302,13 +431,13 @@ const App = () => {
       primaryDark: "#1E5A4F",
       secondary: "#D4A84A",
       accent: "#D47A4A",
-      background: "#F0F2F0",
+      background: "#F5F7F5",
       cardBg: "#FFFFFF",
-      surface: "#F5F7F5",
+      surface: "#FAFBFA",
       text: "#1A2A2E",
       textLight: "#3A4A4F",
-      textMuted: "#5A6A6E",
-      border: "#E0E4E0",
+      textMuted: "#6A7A7E",
+      border: "#E5E9E5",
       gradient1: "linear-gradient(135deg, #2A6B5F 0%, #1E5A4F 100%)",
       gradient2: "linear-gradient(135deg, #D4A84A 0%, #D47A4A 100%)",
       gradient3: "linear-gradient(135deg, #1E5A4F 0%, #2A6B5F 100%)"
@@ -319,13 +448,13 @@ const App = () => {
       primaryDark: "#3A7A6F",
       secondary: "#E4C86A",
       accent: "#E49A5A",
-      background: "#1a1a2e",
-      cardBg: "#16213e",
-      surface: "#0f3460",
+      background: "#12121a",
+      cardBg: "#1a1a2e",
+      surface: "#16213e",
       text: "#e8e8e8",
       textLight: "#c0c0c0",
-      textMuted: "#a0a0a0",
-      border: "#2a3a5e",
+      textMuted: "#909090",
+      border: "#2a2a3e",
       gradient1: "linear-gradient(135deg, #4A9A8F 0%, #3A7A6F 100%)",
       gradient2: "linear-gradient(135deg, #E4C86A 0%, #E49A5A 100%)",
       gradient3: "linear-gradient(135deg, #3A7A6F 0%, #4A9A8F 100%)"
@@ -334,21 +463,21 @@ const App = () => {
     return darkMode ? darkTheme : lightTheme;
   }, [darkMode]);
 
-  const toggleDarkMode = () => {
+  const toggleDarkMode = useCallback(() => {
     const newMode = !darkMode;
     setDarkMode(newMode);
     showMessage(newMode ? '🌙 Dark mode activated' : '☀️ Light mode activated', 'success');
-  };
+  }, [darkMode, showMessage]);
 
-  const scrollTo = (id) => {
+  const scrollTo = useCallback((id) => {
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  };
+  }, []);
 
   // --- Button Component ---
-  const Button = ({ children, onClick, primary = true, small = false }) => (
+  const Button = useCallback(({ children, onClick, primary = true, small = false }) => (
     <button onClick={onClick} style={{
       background: primary ? theme.gradient1 : 'transparent',
       color: primary ? 'white' : theme.primary,
@@ -360,247 +489,15 @@ const App = () => {
       cursor: 'pointer',
       transition: 'all 0.3s ease'
     }}>{children}</button>
-  );
+  ), [theme, screenSize.isMobile]);
 
   // ============================================
-  // PAYMENT MODAL - COMPLETE WORKING CODE
+  // PAYMENT MODAL - FLICKER FREE
   // ============================================
-  const PaymentModal = () => {
-    // Local state (prevents flicker)
-    const [localPhone, setLocalPhone] = useState('');
-    const [localAmount, setLocalAmount] = useState('100');
-    const [localProcessing, setLocalProcessing] = useState(false);
-    const [localPhoneError, setLocalPhoneError] = useState('');
-    const [localAmountError, setLocalAmountError] = useState('');
-    
+  const PaymentModal = useCallback(() => {
     if (!showPaymentModal) return null;
     
-    // Phone number normalization - handles ALL formats (NO unnecessary escapes)
-const normalizeMpesaPhone = (phone) => {
-  if (!phone) return '';
-  
-  // Remove all spaces, dashes, parentheses, dots (no unnecessary escapes)
-  let cleaned = phone.toString().replace(/[\s\-()]/g, '');
-  
-  // Remove leading '+'
-  if (cleaned.startsWith('+')) {
-    cleaned = cleaned.slice(1);
-  }
-  
-  // Remove leading '00' (international dialing code)
-  if (cleaned.startsWith('00')) {
-    cleaned = cleaned.slice(2);
-  }
-  
-  // Format: 0712345678 (10 digits starting with 0)
-  if (cleaned.startsWith('0') && cleaned.length === 10) {
-    cleaned = '254' + cleaned.slice(1);
-  }
-  // Format: 712345678 (9 digits starting with 7)
-  else if (cleaned.startsWith('7') && cleaned.length === 9) {
-    cleaned = '254' + cleaned;
-  }
-  // Format: 254712345678 (already correct)
-  else if (cleaned.startsWith('254') && cleaned.length === 12) {
-    // Already correct
-  }
-  
-  // Final validation: must be 254 followed by 1 or 7, then 8 digits
-  if (!/^254[17]\d{8}$/.test(cleaned)) {
-    return null;
-  }
-  
-  return cleaned;
-};
-    const formatDisplayPhone = (phone) => {
-      if (!phone) return '';
-      const normalized = normalizeMpesaPhone(phone);
-      if (normalized && normalized.length === 12) {
-        const local = '0' + normalized.slice(3);
-        return local.replace(/(\d{4})(\d{3})(\d{3})/, '$1 $2 $3');
-      }
-      return phone;
-    };
-    
-    const validatePhoneNumber = (phone) => {
-      if (!phone || phone.trim() === '') return 'Phone number is required';
-      const normalized = normalizeMpesaPhone(phone);
-      if (!normalized) return 'Enter a valid Kenyan phone number (e.g., 0712345678)';
-      if (!/^254[17]\d{8}$/.test(normalized)) return 'Must be a Safaricom M-PESA registered number';
-      return null;
-    };
-    
-    const validateAmount = (amount) => {
-      const amountValue = Number(amount);
-      if (!amount || amount === '') return 'Amount is required';
-      if (isNaN(amountValue)) return 'Enter a valid number';
-      if (amountValue < 100) return 'Minimum amount is KES 100';
-      if (amountValue > 150000) return 'Maximum amount is KES 150,000';
-      return null;
-    };
-    
-    const handlePhoneChange = (e) => {
-      setLocalPhone(e.target.value);
-      setLocalPhoneError('');
-    };
-    
-    const handlePhoneBlur = () => {
-      const error = validatePhoneNumber(localPhone);
-      setLocalPhoneError(error || '');
-      if (!error && localPhone) {
-        const formatted = formatDisplayPhone(localPhone);
-        if (formatted !== localPhone) setLocalPhone(formatted);
-      }
-    };
-    
-    const handleAmountChange = (e) => {
-      const value = e.target.value;
-      if (value === '' || /^\d+$/.test(value)) {
-        setLocalAmount(value);
-        setLocalAmountError('');
-      }
-    };
-    
-    const handleAmountBlur = () => {
-      const error = validateAmount(localAmount);
-      setLocalAmountError(error || '');
-    };
-    
     const presetAmounts = [100, 200, 500, 1000];
-    
-    const pollPaymentStatus = (checkoutRequestID) => {
-      let attempts = 0;
-      const maxAttempts = 30;
-      
-      const interval = setInterval(async () => {
-        attempts++;
-        
-        try {
-          const response = await fetch(`${API_URL}/api/mpesa/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ checkoutRequestID })
-          });
-          
-          const data = await response.json();
-          
-          if (data.ResultCode === '0') {
-            clearInterval(interval);
-            const amountValue = Number(localAmount);
-            setBalance(prev => prev + amountValue);
-            showMessage(`💰 Payment successful! KES ${amountValue} added. New balance: KES ${(balance + amountValue).toFixed(2)}`, 'success');
-            setLocalProcessing(false);
-            setShowPaymentModal(false);
-            setLocalPhone('');
-            setLocalAmount('100');
-            setLocalPhoneError('');
-            setLocalAmountError('');
-          } else if (data.ResultCode !== '1037') {
-            clearInterval(interval);
-            showMessage('Payment failed or was cancelled. Please try again.', 'error');
-            setLocalProcessing(false);
-          }
-        } catch (error) {
-          console.error('Status check error:', error);
-        }
-        
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          if (localProcessing) {
-            showMessage('Payment timeout. Please check your M-PESA messages.', 'warning');
-            setLocalProcessing(false);
-          }
-        }
-      }, 2000);
-    };
-    
-    const initiatePayment = async () => {
-      const phoneError = validatePhoneNumber(localPhone);
-      if (phoneError) {
-        setLocalPhoneError(phoneError);
-        showMessage(phoneError, 'error');
-        return;
-      }
-      
-      const amountError = validateAmount(localAmount);
-      if (amountError) {
-        setLocalAmountError(amountError);
-        showMessage(amountError, 'error');
-        return;
-      }
-      
-      const formattedPhone = normalizeMpesaPhone(localPhone);
-      const amountValue = Number(localAmount);
-      
-      setLocalProcessing(true);
-      showMessage('Sending STK Push to your phone...', 'info');
-      
-      try {
-        const response = await fetch(`${API_URL}/api/mpesa/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phoneNumber: formattedPhone,
-            amount: amountValue,
-            accountReference: `OKOA-${Date.now()}`,
-            description: `OKOA GAS top up - KES ${amountValue}`
-          })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          showMessage(`✅ STK Push sent to ${formatDisplayPhone(localPhone)}! Enter your M-PESA PIN.`, 'success');
-          pollPaymentStatus(data.checkoutRequestID);
-        } else {
-          showMessage(data.message || 'Payment initiation failed. Please try again.', 'error');
-          setLocalProcessing(false);
-        }
-      } catch (error) {
-        console.error('Payment error:', error);
-        showMessage('Network error. Please check your connection and try again.', 'error');
-        setLocalProcessing(false);
-      }
-    };
-    
-    const simulatePayment = () => {
-      const phoneError = validatePhoneNumber(localPhone);
-      if (phoneError) {
-        setLocalPhoneError(phoneError);
-        showMessage(phoneError, 'error');
-        return;
-      }
-      
-      const amountError = validateAmount(localAmount);
-      if (amountError) {
-        setLocalAmountError(amountError);
-        showMessage(amountError, 'error');
-        return;
-      }
-      
-      setLocalProcessing(true);
-      showMessage('Simulating M-PESA STK Push...', 'info');
-      
-      setTimeout(() => {
-        const amountValue = Number(localAmount);
-        setBalance(prev => prev + amountValue);
-        showMessage(`✅ Demo Payment successful! Added KES ${localAmount}. New balance: KES ${(balance + amountValue).toFixed(2)}`, 'success');
-        setLocalProcessing(false);
-        setShowPaymentModal(false);
-        setLocalPhone('');
-        setLocalAmount('100');
-        setLocalPhoneError('');
-        setLocalAmountError('');
-      }, 2000);
-    };
-    
-    const resetModal = () => {
-      setShowPaymentModal(false);
-      setLocalPhone('');
-      setLocalAmount('100');
-      setLocalPhoneError('');
-      setLocalAmountError('');
-    };
     
     return (
       <div style={{ 
@@ -608,85 +505,80 @@ const normalizeMpesaPhone = (phone) => {
         backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 2000, 
         display: 'flex', alignItems: 'center', justifyContent: 'center', 
         padding: '1rem' 
-      }} onClick={resetModal}>
+      }} onClick={() => setShowPaymentModal(false)}>
         <div style={{ 
           backgroundColor: darkMode ? '#1e1e2e' : '#ffffff', 
           borderRadius: '28px', maxWidth: '460px', width: '100%', 
           padding: '1.75rem', position: 'relative',
-          animation: 'fadeInUp 0.3s ease',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+          animation: 'fadeInUp 0.3s ease'
         }} onClick={e => e.stopPropagation()}>
           
-          <button onClick={resetModal} style={{ 
+          <button onClick={() => setShowPaymentModal(false)} style={{ 
             position: 'absolute', top: '1rem', right: '1rem', 
             background: 'none', border: 'none', fontSize: '1.25rem', 
             cursor: 'pointer', color: darkMode ? '#a0a0a0' : '#888'
           }}>✕</button>
           
           <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-            <div style={{ fontSize: '3.5rem', marginBottom: '0.5rem' }}>💰</div>
+            <div style={{ fontSize: '3.5rem' }}>💰</div>
             <h2 style={{ fontSize: '1.5rem', margin: 0, color: darkMode ? '#e8e8e8' : '#1A2A2E', fontWeight: '700' }}>M-PESA Payment</h2>
             <p style={{ color: darkMode ? '#a0a0a0' : '#5A6A6E', fontSize: '0.85rem' }}>Instant STK Push to your phone</p>
           </div>
           
-          {/* Amount Section */}
           <div style={{ marginBottom: '1.25rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: darkMode ? '#e0e0e0' : '#1A2A2E' }}>Amount (KES)</label>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
               {presetAmounts.map(amt => (
-                <button key={amt} type="button" onClick={() => { setLocalAmount(String(amt)); setLocalAmountError(''); }} 
+                <button key={amt} type="button" onClick={() => setPaymentAmount(String(amt))} 
                   style={{ flex: '1', minWidth: '70px', padding: '0.6rem 0.5rem',
-                    backgroundColor: Number(localAmount) === amt ? '#2A6B5F' : (darkMode ? '#2a2a3e' : '#f0f0f0'),
-                    color: Number(localAmount) === amt ? 'white' : (darkMode ? '#e0e0e0' : '#333'),
+                    backgroundColor: Number(paymentAmount) === amt ? '#2A6B5F' : (darkMode ? '#2a2a3e' : '#f0f0f0'),
+                    color: Number(paymentAmount) === amt ? 'white' : (darkMode ? '#e0e0e0' : '#333'),
                     border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '500' }}>
                   KES {amt}
                 </button>
               ))}
             </div>
-            <input type="text" inputMode="numeric" value={localAmount} onChange={handleAmountChange} onBlur={handleAmountBlur}
+            <input type="text" inputMode="numeric" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
               placeholder="Enter amount"
-              style={{ width: '100%', padding: '0.85rem', border: `1px solid ${localAmountError ? '#E76F51' : (darkMode ? '#3a3a4e' : '#e0e0e0')}`, 
+              style={{ width: '100%', padding: '0.85rem', border: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`, 
                 borderRadius: '12px', background: darkMode ? '#2a2a3e' : '#f8f9fa', color: darkMode ? '#e8e8e8' : '#1A2A2E', fontSize: '1rem' }} />
-            {localAmountError && <p style={{ color: '#E76F51', fontSize: '0.7rem', marginTop: '0.25rem' }}>{localAmountError}</p>}
           </div>
           
-          {/* Phone Number Section */}
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: darkMode ? '#e0e0e0' : '#1A2A2E' }}>M-PESA Phone Number</label>
-            <input type="tel" placeholder="0712345678 or +254712345678" value={localPhone} onChange={handlePhoneChange} onBlur={handlePhoneBlur} autoFocus
-              style={{ width: '100%', padding: '0.85rem', border: `1px solid ${localPhoneError ? '#E76F51' : (darkMode ? '#3a3a4e' : '#e0e0e0')}`, 
+            <input type="tel" placeholder="0712345678" value={paymentPhone} onChange={e => setPaymentPhone(e.target.value)} autoFocus
+              style={{ width: '100%', padding: '0.85rem', border: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`, 
                 borderRadius: '12px', background: darkMode ? '#2a2a3e' : '#f8f9fa', color: darkMode ? '#e8e8e8' : '#1A2A2E', fontSize: '1rem' }} />
-            {localPhoneError ? (
-              <p style={{ color: '#E76F51', fontSize: '0.7rem', marginTop: '0.25rem' }}>{localPhoneError}</p>
-            ) : (
-              <p style={{ fontSize: '0.7rem', color: darkMode ? '#a0a0a0' : '#5A6A6E', marginTop: '0.25rem' }}>
-                Accepted: 0712345678 | +254712345678 | 254712345678
-              </p>
-            )}
+            <p style={{ fontSize: '0.7rem', color: darkMode ? '#a0a0a0' : '#5A6A6E', marginTop: '0.25rem' }}>
+              Accepted: 0712345678 | +254712345678 | 254712345678
+            </p>
           </div>
           
-          <button type="button" onClick={initiatePayment} disabled={localProcessing}
+          <button type="button" onClick={initiateMpesaPayment} disabled={processingPayment}
             style={{ width: '100%', padding: '0.9rem', background: 'linear-gradient(135deg, #2A6B5F 0%, #1E5A4F 100%)',
               color: 'white', border: 'none', borderRadius: '50px', fontSize: '1rem', fontWeight: '600',
-              cursor: localProcessing ? 'not-allowed' : 'pointer', opacity: localProcessing ? 0.6 : 1, marginBottom: '0.75rem' }}>
-            {localProcessing ? 'Sending STK Push...' : 'Pay with M-PESA →'}
+              cursor: processingPayment ? 'not-allowed' : 'pointer', opacity: processingPayment ? 0.6 : 1, marginBottom: '0.75rem' }}>
+            {processingPayment ? 'Sending STK Push...' : 'Pay with M-PESA →'}
           </button>
           
-          <button type="button" onClick={simulatePayment} disabled={localProcessing}
+          <button type="button" onClick={simulateMpesaPayment} disabled={processingPayment}
             style={{ width: '100%', padding: '0.75rem', backgroundColor: 'transparent',
               color: darkMode ? '#a0a0a0' : '#6c757d', border: `1px solid ${darkMode ? '#3a3a4e' : '#dee2e6'}`,
-              borderRadius: '50px', fontSize: '0.85rem', cursor: localProcessing ? 'not-allowed' : 'pointer' }}>
+              borderRadius: '50px', fontSize: '0.85rem', cursor: processingPayment ? 'not-allowed' : 'pointer' }}>
             Demo Mode (Test Payment)
           </button>
         </div>
       </div>
     );
-  };
+  }, [showPaymentModal, darkMode, paymentAmount, paymentPhone, processingPayment, initiateMpesaPayment, simulateMpesaPayment]);
 
   // ============================================
-  // SIGNUP MODAL
+  // SIGNUP MODAL - MOVED OUTSIDE TO PREVENT HOOK ERRORS
   // ============================================
+  // Note: SignUpModal is now defined at the top level
+  // of the component, not inside another callback
   const SignUpModal = () => {
+    // Local state for the modal
     const [localName, setLocalName] = useState('');
     const [localPhone, setLocalPhone] = useState('');
     const [localEmail, setLocalEmail] = useState('');
@@ -700,6 +592,7 @@ const normalizeMpesaPhone = (phone) => {
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     
+    // Set up global callback for map location - runs once
     useEffect(() => {
       window.updateLocationDisplay = (address) => {
         setLocalLocation(address);
@@ -708,6 +601,24 @@ const normalizeMpesaPhone = (phone) => {
       };
       return () => { delete window.updateLocationDisplay; };
     }, []);
+    
+    // Reset form when modal opens
+    useEffect(() => {
+      if (showSignUpModal) {
+        setLocalName('');
+        setLocalPhone('');
+        setLocalEmail('');
+        setLocalInstructions('');
+        setLocalLocation('');
+        setSearchQuery('');
+        setLocalSelectedKitId(selectedKit.id);
+        setLocalErrors({});
+        setLocalLocationStatus('');
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showSignUpModal, selectedKit.id]);
     
     if (!showSignUpModal) return null;
     
@@ -720,7 +631,7 @@ const normalizeMpesaPhone = (phone) => {
         return;
       }
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`);
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
         const results = await response.json();
         setSuggestions(results);
         setShowSuggestions(results.length > 0);
@@ -789,78 +700,9 @@ const normalizeMpesaPhone = (phone) => {
     
     const sendEmailNotification = (formDataToSend) => {
       const subject = `NEW KIT REQUEST: ${formDataToSend.name} - ${formDataToSend.kitName}`;
-      const body = `NEW KIT REQUEST FROM OKOA GAS WEBSITE
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CUSTOMER DETAILS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Name: ${formDataToSend.name}
-Phone: ${formDataToSend.phone}
-Email: ${formDataToSend.email}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KIT INFORMATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Kit Type: ${formDataToSend.kitName}
-Size: ${formDataToSend.kitSize}
-Deposit Required (10%): KES ${(formDataToSend.fullPrice * 0.1).toFixed(0)}
-Full Price: KES ${formDataToSend.fullPrice}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DELIVERY LOCATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${formDataToSend.location}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SPECIAL INSTRUCTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${formDataToSend.instructions || 'None provided'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TRANSPORTATION COST
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[TO BE CALCULATED BY ADMIN]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Request Date: ${new Date().toLocaleString()}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      
+      const body = `NEW KIT REQUEST\n\nName: ${formDataToSend.name}\nPhone: ${formDataToSend.phone}\nEmail: ${formDataToSend.email}\nKit: ${formDataToSend.kitName}\nLocation: ${formDataToSend.location}\nInstructions: ${formDataToSend.instructions || 'None'}`;
       const mailtoLink = `mailto:ruttokitallam@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      
-      const depositAmount = (formDataToSend.fullPrice * 0.1).toFixed(0);
-      const customerSubject = `OKOA GAS: Kit Request Confirmation - ${formDataToSend.kitName}`;
-      const customerBody = `Dear ${formDataToSend.name},
-
-Thank you for requesting a kit from OKOA GAS!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ORDER SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Kit: ${formDataToSend.kitName}
-Deposit Required (10%): KES ${depositAmount}
-Delivery Location: ${formDataToSend.location}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHAT HAPPENS NEXT?
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. We will calculate transportation cost based on your location
-2. We will contact you within 24 hours
-3. After deposit payment, we will schedule delivery
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Need help? Contact us:
-📞 +254717052939
-✉️ hello@okoagas.com
-
-Thank you for choosing OKOA GAS!`;
-      
-      const customerMailto = `mailto:${formDataToSend.email}?subject=${encodeURIComponent(customerSubject)}&body=${encodeURIComponent(customerBody)}`;
-      
       window.open(mailtoLink, '_blank');
-      setTimeout(() => {
-        window.open(customerMailto, '_blank');
-      }, 500);
-      
       return true;
     };
     
@@ -901,7 +743,7 @@ Thank you for choosing OKOA GAS!`;
       setSelectedKit(localSelectedKit);
       
       setTimeout(() => {
-        showMessage(`✅ Thank you ${localName}! Your request has been sent. Our team will contact you within 24 hours.`, 'success');
+        showMessage(`✅ Thank you ${localName}! Your request has been sent.`, 'success');
         setLocalSubmitting(false);
         setShowSignUpModal(false);
       }, 1500);
@@ -928,9 +770,10 @@ Thank you for choosing OKOA GAS!`;
           <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem', color: theme.text, fontWeight: '700' }}>Get Your Kit 🎁</h2>
           <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. Transportation cost calculated based on your location.</p>
           
+          {/* Kit Selection */}
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
             {kitOptions.map(kit => (
-              <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected! 10% deposit required.`, 'success'); }} 
+              <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} 
                 style={{ border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : theme.border}`, borderRadius: '12px', 
                   padding: '0.75rem', cursor: 'pointer', background: localSelectedKitId === kit.id ? `${theme.primary}10` : theme.cardBg }}>
                 <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '80px', objectFit: 'contain' }} />
@@ -1018,20 +861,28 @@ Thank you for choosing OKOA GAS!`;
                   {localErrors.location && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
                 </div>
                 
-                <div ref={mapRef} style={{ height: '380px', width: '100%', borderRadius: '16px', 
-                  border: `2px solid ${localErrors.location ? '#E76F51' : '#2A6B5F'}`, marginBottom: '0.75rem', 
-                  backgroundColor: '#ffffff', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                {/* Map Container */}
+                <div 
+                  ref={mapContainerRef} 
+                  style={{ 
+                    height: '380px', width: '100%', borderRadius: '16px', 
+                    border: `2px solid ${localErrors.location ? '#E76F51' : '#2A6B5F'}`, 
+                    marginBottom: '0.75rem', 
+                    backgroundColor: '#ffffff', 
+                    overflow: 'hidden'
+                  }}
+                >
                   {!mapLoaded && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', 
-                      flexDirection: 'column', background: '#ffffff' }}>
+                      flexDirection: 'column', background: '#f5f5f5' }}>
                       <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🗺️</div>
-                      <p style={{ color: '#333' }}>Loading map...</p>
+                      <p>Loading map...</p>
                     </div>
                   )}
                 </div>
                 
                 <div style={{ fontSize: '0.7rem', color: theme.textMuted, textAlign: 'center', marginTop: '0.25rem' }}>
-                  💡 Tip: Drag the pin or click anywhere on the map to set your exact delivery location
+                  💡 Tip: Drag the pin or click anywhere on the map
                 </div>
               </div>
             </div>
@@ -1071,18 +922,14 @@ Thank you for choosing OKOA GAS!`;
       <style>{`
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         .hero-animate { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
         .feature-card { transition: all 0.3s ease; }
         .feature-card:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
-        
         input:focus, textarea:focus { outline: none; border-color: #2A6B5F !important; box-shadow: 0 0 0 3px rgba(42,107,95,0.1); }
-        
         .leaflet-container { z-index: 1; }
       `}</style>
       
-      {/* Notification Banner - Top Right Corner */}
+      {/* Notification Banner */}
       {showNotification && (
         <div style={{
           position: 'fixed',
@@ -1098,7 +945,6 @@ Thank you for choosing OKOA GAS!`;
           textAlign: 'center',
           zIndex: 10000,
           fontSize: '0.9rem',
-          fontWeight: '500',
           maxWidth: screenSize.isMobile ? 'calc(100% - 20px)' : '350px'
         }}>
           {showNotification.message}
@@ -1113,29 +959,25 @@ Thank you for choosing OKOA GAS!`;
         background: darkMode ? '#1a1a2e' : 'white', 
         padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', 
         position: 'sticky', top: 0, zIndex: 100, 
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        transition: 'background 0.3s ease'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', 
-          alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }} onClick={() => scrollTo('home')}>
-            <span style={{ fontSize: screenSize.isMobile ? '1.8rem' : '2rem', animation: 'pulse 2s ease-in-out infinite' }}>🔥</span>
+            <span style={{ fontSize: screenSize.isMobile ? '1.8rem' : '2rem' }}>🔥</span>
             <span style={{ fontWeight: 'bold', fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>OKOA GAS</span>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button onClick={toggleDarkMode} style={{
-              background: darkMode ? '#2a2a3e' : '#e8e8e8',
-              border: 'none', borderRadius: '50%', width: '36px', height: '36px',
-              cursor: 'pointer', fontSize: '1.1rem',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: darkMode ? '#f0c674' : '#5a6a6e',
-              transition: 'all 0.3s ease', boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+              background: darkMode ? '#2a2a3e' : '#e8e8e8', border: 'none', borderRadius: '50%', width: '36px', height: '36px',
+              cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: darkMode ? '#f0c674' : '#5a6a6e'
             }}>
               {darkMode ? '☀️' : '🌙'}
             </button>
             {!screenSize.isMobile && (
               <>
-                <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>                
+                <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>
+                <button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>10% Upfront</button>
                 <button onClick={() => scrollTo('safety')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Safety</button>
               </>
             )}
@@ -1149,7 +991,7 @@ Thank you for choosing OKOA GAS!`;
         <h1 style={{ background: theme.gradient1, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', 
           marginBottom: '0.5rem', fontSize: screenSize.isMobile ? '2rem' : '3rem', fontWeight: '800' }}>Clean Cooking for Every Home.</h1>
         <p style={{ fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: theme.primary, margin: '0.5rem 0', fontWeight: '500' }}>Pay as you go from KES 1.</p>
-        <p style={{ maxWidth: '500px', margin: '1rem auto', color: theme.textLight, fontSize: '1rem' }}>No cylinders to buy. No deposit. Just clean LPG delivered to your stove.</p>
+        <p style={{ maxWidth: '500px', margin: '1rem auto', color: theme.textLight }}>No cylinders to buy. No deposit. Just clean LPG delivered to your stove.</p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button onClick={openSignUpModal}>Get Your Kit →</Button>
           <Button onClick={() => setShowPaymentModal(true)} primary={false}>Top Up M-PESA</Button>
@@ -1175,9 +1017,9 @@ Thank you for choosing OKOA GAS!`;
             { title: 'Complete Kits', text: 'Cylinder, regulator, hose, and burner included.' },
             { title: 'Pay-as-you-go', text: 'M-PESA top-up and smart meter support.' }
           ].map((item, index) => (
-            <div key={index} className="feature-card" style={{ padding: '1.25rem', borderRadius: '20px', background: theme.cardBg, boxShadow: `0 2px 10px ${darkMode ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)'}` }}>
+            <div key={index} className="feature-card" style={{ padding: '1.25rem', borderRadius: '20px', background: theme.cardBg }}>
               <div style={{ fontSize: '0.95rem', fontWeight: '700', color: theme.primary, marginBottom: '0.75rem' }}>{item.title}</div>
-              <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7, fontSize: '0.9rem' }}>{item.text}</p>
+              <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7 }}>{item.text}</p>
             </div>
           ))}
         </div>
@@ -1188,7 +1030,7 @@ Thank you for choosing OKOA GAS!`;
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
             <h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem' }}>Our Services in Action</h2>
-            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight, fontSize: '1rem' }}>See how OKOA GAS delivers clean cooking solutions.</p>
+            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight }}>See how OKOA GAS delivers clean cooking solutions.</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
             <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', background: theme.cardBg }}>
@@ -1213,7 +1055,7 @@ Thank you for choosing OKOA GAS!`;
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
             <div style={{ color: theme.secondary, fontWeight: 700, marginBottom: '0.5rem' }}>Quality Products</div>
             <h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem' }}>Our Cylinder Kits</h2>
-            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight, fontSize: '1rem' }}>Choose the perfect kit. Pay only 10% deposit.</p>
+            <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight }}>Choose the perfect kit. Pay only 10% deposit.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1.5rem' }}>
@@ -1221,7 +1063,7 @@ Thank you for choosing OKOA GAS!`;
               <div key={kit.id} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: theme.cardBg, textAlign: 'center' }}>
                 <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
                 <h3 style={{ margin: '0.5rem 0', color: theme.primary, fontWeight: '600', fontSize: '1.2rem' }}>{kit.fullName}</h3>
-                <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7, fontSize: '0.9rem' }}>{kit.size} with {kit.cooker}</p>
+                <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7 }}>{kit.size} with {kit.cooker}</p>
                 <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', fontWeight: 'bold', color: theme.primary }}>10% Deposit</div>
                 <div style={{ fontSize: '0.8rem', color: theme.textMuted }}>Full: KES {kit.fullPrice.toLocaleString()}</div>
                 <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: theme.textLight }}>{kit.monthly}</div>
@@ -1235,11 +1077,11 @@ Thank you for choosing OKOA GAS!`;
       <div id="promise" style={{ background: theme.surface, padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <h2 style={{ textAlign: 'center', color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem' }}>10% Upfront - Pay as You Go</h2>
-          <p style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 1.5rem auto', color: theme.textLight, fontSize: '1rem' }}>Start with only 10% deposit, then pay the balance in installments via M-PESA.</p>
+          <p style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 1.5rem auto', color: theme.textLight }}>Start with only 10% deposit, then pay the balance in installments via M-PESA.</p>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
-            {[{ icon: '💰', name: 'Low Deposit', desc: 'Only 10% upfront to get started' }, 
+            {[{ icon: '💰', name: 'Low Deposit', desc: 'Only 10% upfront' }, 
               { icon: '📱', name: 'M-PESA Payments', desc: 'Pay balance via M-PESA' }, 
-              { icon: '🚚', name: 'Transport Calculated', desc: 'Cost based on your location' }].map((item, i) => (
+              { icon: '🚚', name: 'Transport Calculated', desc: 'Cost based on location' }].map((item, i) => (
               <div key={i} style={{ textAlign: 'center', padding: '1rem', background: theme.cardBg, borderRadius: '16px' }}>
                 <div style={{ fontSize: '2rem' }}>{item.icon}</div>
                 <h3 style={{ color: theme.primary, fontWeight: '600', fontSize: '1.1rem', marginTop: '0.5rem' }}>{item.name}</h3>
@@ -1252,7 +1094,7 @@ Thank you for choosing OKOA GAS!`;
       
       {/* Balance Display */}
       <div style={{ maxWidth: '1200px', margin: '1.5rem auto', padding: '0 1rem' }}>
-        <div style={{ background: theme.gradient1, borderRadius: '20px', padding: '1.5rem', color: 'white', textAlign: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+        <div style={{ background: theme.gradient1, borderRadius: '20px', padding: '1.5rem', color: 'white', textAlign: 'center' }}>
           <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>Your Current Balance</div>
           <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>KES {balance.toFixed(2)}</div>
           <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: 'white', color: '#2A6B5F', border: 'none', padding: '0.5rem 1rem', borderRadius: '50px', cursor: 'pointer', fontWeight: '600' }}>Add Money via M-PESA</button>
@@ -1263,16 +1105,16 @@ Thank you for choosing OKOA GAS!`;
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1.5rem', alignItems: 'center' }}>
           <div><h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2>
-          <p style={{ color: theme.textLight, fontSize: '1rem' }}>See live gas level, top up via M-PESA.</p>
+          <p style={{ color: theme.textLight }}>See live gas level, top up via M-PESA.</p>
           <Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button></div>
-          <div style={{ background: theme.gradient3, borderRadius: '16px', padding: '1rem', color: 'white', textAlign: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+          <div style={{ background: theme.gradient3, borderRadius: '16px', padding: '1rem', color: 'white', textAlign: 'center' }}>
             <SafeImage src={images.meter} alt="Smart Meter" style={{ width: '80%', marginBottom: '1rem' }} />
-            <div style={{ fontWeight: '500' }}>Gas Level: {gasLevel}%</div>
+            <div>Gas Level: {gasLevel}%</div>
             <div style={{ height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', margin: '0.5rem 0' }}>
               <div style={{ width: `${gasLevel}%`, height: '100%', background: theme.secondary, borderRadius: '4px' }}></div>
             </div>
-            <div style={{ fontWeight: '500' }}>Balance: KES {balance.toFixed(2)}</div>
-            <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: theme.secondary, color: darkMode ? '#1a1a2e' : '#1A2A2E', border: 'none', padding: '0.3rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}>Add Money</button>
+            <div>Balance: KES {balance.toFixed(2)}</div>
+            <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: theme.secondary, color: darkMode ? '#1a1a2e' : '#1A2A2E', border: 'none', padding: '0.3rem 0.8rem', borderRadius: '8px', cursor: 'pointer' }}>Add Money</button>
           </div>
         </div>
       </div>
@@ -1284,11 +1126,11 @@ Thank you for choosing OKOA GAS!`;
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '1rem', marginTop: '1.5rem' }}>
             <div className="feature-card" style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}>
               <h3 style={{ color: '#D4A84A', fontWeight: '600', fontSize: '1.2rem' }}>Automatic Leak Detection</h3>
-              <p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>High-precision sensors monitor air continuously.</p>
+              <p style={{ color: '#e2e8f0' }}>High-precision sensors monitor air continuously.</p>
             </div>
             <div className="feature-card" style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1rem' }}>
               <h3 style={{ color: '#D4A84A', fontWeight: '600', fontSize: '1.2rem' }}>Emergency Valve Shutoff</h3>
-              <p style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>Immediate mechanical shutoff when leak detected.</p>
+              <p style={{ color: '#e2e8f0' }}>Immediate mechanical shutoff when leak detected.</p>
             </div>
           </div>
         </div>
@@ -1305,7 +1147,7 @@ Thank you for choosing OKOA GAS!`;
               <div key={index} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: theme.cardBg }}>
                 <SafeImage src={item.image} alt={item.title} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
                 <h3 style={{ margin: '0.5rem 0', color: theme.text, fontWeight: '600', fontSize: '1.2rem' }}>{item.title}</h3>
-                <p style={{ color: theme.textLight, fontSize: '0.9rem' }}>{item.text}</p>
+                <p style={{ color: theme.textLight }}>{item.text}</p>
               </div>
             ))}
           </div>
@@ -1313,90 +1155,75 @@ Thank you for choosing OKOA GAS!`;
       </div>
       
       {/* Payment Options Section - M-PESA & Cash Side by Side */}
-<div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
-  <div style={{
-    display: 'grid',
-    gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr',
-    gap: '1.5rem'
-  }}>
-    
-    {/* M-PESA Instructions Card */}
-    <div style={{
-      background: darkMode ? '#2a2a2a' : '#f0fdf4',
-      borderRadius: '20px',
-      padding: '1.5rem',
-      borderLeft: `4px solid ${theme.primary}`,
-      transition: 'transform 0.3s ease',
-      boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-        <div style={{ fontSize: '2rem' }}>💰</div>
-        <h3 style={{ color: theme.primary, margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>M-PESA Payment</h3>
-      </div>
-      <ol style={{ marginLeft: '1rem', color: theme.textLight, fontSize: '0.9rem', paddingLeft: '0.5rem' }}>
-        <li style={{ marginBottom: '0.5rem' }}>Click "Top Up M-PESA" button</li>
-        <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA registered phone number</li>
-        <li style={{ marginBottom: '0.5rem' }}>Enter amount (minimum KES 100)</li>
-        <li style={{ marginBottom: '0.5rem' }}>You'll receive an STK Push on your phone</li>
-        <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA PIN to complete payment</li>
-        <li>Gas balance updates instantly!</li>
-      </ol>
-      <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}` }}>
-        <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0 }}>
-          🔒 Secure transactions via Safaricom M-PESA
-        </p>
-      </div>
-    </div>
-    
-    {/* Cash Payment Card */}
-    <div style={{
-      background: darkMode ? '#1e2a2e' : '#fef9e8',
-      borderRadius: '20px',
-      padding: '1.5rem',
-      borderLeft: `4px solid #D4A84A`,
-      transition: 'transform 0.3s ease',
-      boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-        <div style={{ fontSize: '2rem' }}>💵</div>
-        <h3 style={{ color: '#D4A84A', margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>Cash Payment</h3>
-      </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <p style={{ color: theme.textLight, fontSize: '0.9rem', marginBottom: '0.5rem', lineHeight: '1.5' }}>
-          Prefer to pay with cash? No problem! Our agents will collect payment upon delivery.
-        </p>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Pay cash on delivery</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>No additional transaction fees</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Receive receipt on payment</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-          <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Available for all kit types</span>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr',
+          gap: '1.5rem'
+        }}>
+          
+          {/* M-PESA Instructions Card */}
+          <div style={{
+            background: darkMode ? '#2a2a2a' : '#f0fdf4',
+            borderRadius: '20px',
+            padding: '1.5rem',
+            borderLeft: `4px solid ${theme.primary}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '2rem' }}>💰</div>
+              <h3 style={{ color: theme.primary, margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>M-PESA Payment</h3>
+            </div>
+            <ol style={{ marginLeft: '1rem', color: theme.textLight, fontSize: '0.9rem', paddingLeft: '0.5rem' }}>
+              <li style={{ marginBottom: '0.5rem' }}>Click "Top Up M-PESA" button</li>
+              <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA registered phone number</li>
+              <li style={{ marginBottom: '0.5rem' }}>Enter amount (minimum KES 100)</li>
+              <li style={{ marginBottom: '0.5rem' }}>You'll receive an STK Push on your phone</li>
+              <li style={{ marginBottom: '0.5rem' }}>Enter your M-PESA PIN to complete payment</li>
+              <li>Gas balance updates instantly!</li>
+            </ol>
+          </div>
+          
+          {/* Cash Payment Card */}
+          <div style={{
+            background: darkMode ? '#1e2a2e' : '#fef9e8',
+            borderRadius: '20px',
+            padding: '1.5rem',
+            borderLeft: `4px solid #D4A84A`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '2rem' }}>💵</div>
+              <h3 style={{ color: '#D4A84A', margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>Cash Payment</h3>
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <p style={{ color: theme.textLight, fontSize: '0.9rem', marginBottom: '0.5rem', lineHeight: '1.5' }}>
+                Prefer to pay with cash? Our agents will collect payment upon delivery.
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Pay cash on delivery</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>No additional fees</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
+                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Available for all kits</span>
+              </div>
+            </div>
+            <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a4a4f' : '#e8dcc8'}` }}>
+              <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span>📞 Call us:</span>
+                <strong style={{ color: '#D4A84A' }}>+254717052939</strong>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
-      <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a4a4f' : '#e8dcc8'}` }}>
-        <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span>📞 Call us:</span>
-          <strong style={{ color: '#D4A84A' }}>+254717052939</strong>
-          <span>to arrange cash payment</span>
-        </p>
-      </div>
-    </div>
-    
-  </div>
-</div>
       
-      {/* ORIGINAL FOOTER - RETAINED */}
+      {/* Footer */}
       <footer style={{ background: '#1a2c38', color: '#94a3b8', padding: '3rem 2rem 1.5rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '2rem', marginBottom: '2rem' }}>
           <div>
