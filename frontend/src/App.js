@@ -1135,8 +1135,7 @@ Thank you for choosing OKOA GAS!`;
             </button>
             {!screenSize.isMobile && (
               <>
-                <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>
-                <button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>10% Upfront</button>
+                <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>                
                 <button onClick={() => scrollTo('safety')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Safety</button>
               </>
             )}
