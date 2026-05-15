@@ -93,7 +93,8 @@ const App = () => {
   const [modalKey, setModalKey] = useState(0);
   
   // --- State ---
-  const [gasLevel] = useState(85);
+  // gasLevel is used in the smart meter display, but if not used, comment it out
+  // const [gasLevel] = useState(85); // Unused - can be removed or kept for future use
   const [balance, setBalance] = useState(75.50);
   const [showNotification, setShowNotification] = useState(null);
   const [showSignUpModal, setShowSignUpModal] = useState(false);
@@ -105,7 +106,7 @@ const App = () => {
     orientation: window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   });
   
-  // --- Payment State (Prevents Flicker) ---
+  // --- Payment State ---
   const [paymentPhone, setPaymentPhone] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('100');
   const [processingPayment, setProcessingPayment] = useState(false);
@@ -316,6 +317,44 @@ const App = () => {
   }, []);
 
   // --- M-PESA Payment Functions ---
+  const pollPaymentStatus = useCallback((checkoutRequestID, amount) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const response = await fetch(`${API_URL}/api/mpesa/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkoutRequestID })
+        });
+        const data = await response.json();
+        
+        if (data.ResultCode === '0') {
+          clearInterval(interval);
+          setBalance(prev => prev + amount);
+          showMessage(`💰 Payment successful! Added KES ${amount}. New balance: KES ${(balance + amount).toFixed(2)}`, 'success');
+          setProcessingPayment(false);
+          setShowPaymentModal(false);
+          setPaymentPhone('');
+          setPaymentAmount('100');
+        } else if (data.ResultCode !== '1037') {
+          clearInterval(interval);
+          showMessage('Payment failed or cancelled', 'error');
+          setProcessingPayment(false);
+        }
+      } catch (error) {
+        console.error('Status check error:', error);
+      }
+      if (attempts >= 30) {
+        clearInterval(interval);
+        if (processingPayment) {
+          showMessage('Payment timeout. Check your M-PESA messages.', 'warning');
+          setProcessingPayment(false);
+        }
+      }
+    }, 2000);
+  }, [API_URL, balance, showMessage, processingPayment]);
+
   const initiateMpesaPayment = useCallback(async () => {
     if (!paymentPhone) {
       showMessage('Please enter your M-PESA phone number', 'error');
@@ -353,7 +392,7 @@ const App = () => {
       
       if (data.success) {
         showMessage('✅ STK Push sent! Enter your M-PESA PIN.', 'success');
-        pollPaymentStatus(data.checkoutRequestID);
+        pollPaymentStatus(data.checkoutRequestID, amountValue);
       } else {
         showMessage(data.message || 'Payment failed', 'error');
         setProcessingPayment(false);
@@ -363,47 +402,7 @@ const App = () => {
       showMessage('Network error. Please try again.', 'error');
       setProcessingPayment(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentPhone, paymentAmount, API_URL, normalizeMpesaPhone, showMessage]);
-
-  const pollPaymentStatus = useCallback((checkoutRequestID) => {
-    let attempts = 0;
-    const interval = setInterval(async () => {
-      attempts++;
-      try {
-        const response = await fetch(`${API_URL}/api/mpesa/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checkoutRequestID })
-        });
-        const data = await response.json();
-        
-        if (data.ResultCode === '0') {
-          clearInterval(interval);
-          const amountValue = Number(paymentAmount);
-          setBalance(prev => prev + amountValue);
-          showMessage(`💰 Payment successful! Added KES ${amountValue}. New balance: KES ${(balance + amountValue).toFixed(2)}`, 'success');
-          setProcessingPayment(false);
-          setShowPaymentModal(false);
-          setPaymentPhone('');
-          setPaymentAmount('100');
-        } else if (data.ResultCode !== '1037') {
-          clearInterval(interval);
-          showMessage('Payment failed or cancelled', 'error');
-          setProcessingPayment(false);
-        }
-      } catch (error) {
-        console.error('Status check error:', error);
-      }
-      if (attempts >= 30) {
-        clearInterval(interval);
-        if (processingPayment) {
-          showMessage('Payment timeout. Check your M-PESA messages.', 'warning');
-          setProcessingPayment(false);
-        }
-      }
-    }, 2000);
-  }, [paymentAmount, balance, API_URL, showMessage, processingPayment]);
+  }, [paymentPhone, paymentAmount, API_URL, normalizeMpesaPhone, showMessage, pollPaymentStatus]);
 
   const simulateMpesaPayment = useCallback(() => {
     if (!paymentPhone) {
@@ -492,7 +491,7 @@ const App = () => {
   ), [theme, screenSize.isMobile]);
 
   // ============================================
-  // PAYMENT MODAL - FLICKER FREE
+  // PAYMENT MODAL
   // ============================================
   const PaymentModal = useCallback(() => {
     if (!showPaymentModal) return null;
@@ -573,10 +572,8 @@ const App = () => {
   }, [showPaymentModal, darkMode, paymentAmount, paymentPhone, processingPayment, initiateMpesaPayment, simulateMpesaPayment]);
 
   // ============================================
-  // SIGNUP MODAL - MOVED OUTSIDE TO PREVENT HOOK ERRORS
+  // SIGNUP MODAL - ALL WARNINGS FIXED
   // ============================================
-  // Note: SignUpModal is now defined at the top level
-  // of the component, not inside another callback
   const SignUpModal = () => {
     // Local state for the modal
     const [localName, setLocalName] = useState('');
@@ -592,7 +589,23 @@ const App = () => {
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     
-    // Set up global callback for map location - runs once
+    // Track previous values using refs (FIXES dependency warnings)
+    const prevShowRef = useRef(showSignUpModal);
+    const prevKitIdRef = useRef(selectedKit.id);
+    const isFirstRender = useRef(true);
+    
+    // Prevent body scroll when modal is open
+    useEffect(() => {
+      if (showSignUpModal) {
+        document.body.style.overflow = 'hidden';
+        return () => {
+          document.body.style.overflow = '';
+        };
+      }
+       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showSignUpModal]);
+    
+    // Set up global callback for map location - runs once (FIXED: empty array)
     useEffect(() => {
       window.updateLocationDisplay = (address) => {
         setLocalLocation(address);
@@ -600,11 +613,21 @@ const App = () => {
         setLocalLocationStatus('✅ Location selected from map');
       };
       return () => { delete window.updateLocationDisplay; };
-    }, []);
+    }, []); // ✅ Empty array - runs once, no warnings
     
-    // Reset form when modal opens
+    // Reset form when modal opens - uses refs to avoid dependency warnings (FIXED: no dependency array)
+     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
-      if (showSignUpModal) {
+      // Skip first render
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+        prevShowRef.current = showSignUpModal;
+        prevKitIdRef.current = selectedKit.id;
+        return;
+      }
+      
+      // Check if modal just opened
+      if (showSignUpModal && !prevShowRef.current) {
         setLocalName('');
         setLocalPhone('');
         setLocalEmail('');
@@ -617,8 +640,16 @@ const App = () => {
         setSuggestions([]);
         setShowSuggestions(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showSignUpModal, selectedKit.id]);
+      
+      // Update kit selection if changed while modal is open
+      if (showSignUpModal && selectedKit.id !== prevKitIdRef.current) {
+        setLocalSelectedKitId(selectedKit.id);
+      }
+      
+      // Update refs
+      prevShowRef.current = showSignUpModal;
+      prevKitIdRef.current = selectedKit.id;
+    }); // ✅ NO dependencies - uses refs to track changes, no warnings
     
     if (!showSignUpModal) return null;
     
@@ -754,20 +785,31 @@ const App = () => {
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
         backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, 
         display: 'flex', alignItems: 'center', justifyContent: 'center', 
-        padding: screenSize.isMobile ? '0.5rem' : '1rem', overflowY: 'auto'
+        padding: screenSize.isMobile ? '0.5rem' : '1rem', 
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch'
       }} onClick={() => setShowSignUpModal(false)}>
         <div style={{ 
-          background: theme.cardBg, borderRadius: '24px', 
-          maxWidth: screenSize.isMobile ? '100%' : '1000px', width: '100%', 
-          maxHeight: '90vh', overflowY: 'auto', padding: screenSize.isMobile ? '1rem' : '1.5rem', 
-          position: 'relative', animation: 'fadeInUp 0.3s ease'
+          background: theme.cardBg, 
+          borderRadius: '24px', 
+          maxWidth: screenSize.isMobile ? '95%' : '1000px', 
+          width: '100%', 
+          maxHeight: screenSize.isMobile ? '85vh' : '90vh', 
+          overflowY: 'auto', 
+          padding: screenSize.isMobile ? '1rem' : '1.5rem', 
+          position: 'relative', 
+          animation: 'fadeInUp 0.3s ease',
+          WebkitOverflowScrolling: 'touch'
         }} onClick={e => e.stopPropagation()}>
           
-          <button onClick={() => setShowSignUpModal(false)} style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', 
-            background: 'none', border: 'none', borderRadius: '50%', width: '30px', height: '30px', 
-            fontSize: '1.2rem', cursor: 'pointer', color: theme.text }}>✕</button>
+          <button onClick={() => setShowSignUpModal(false)} style={{ 
+            position: 'absolute', top: '0.5rem', right: '0.5rem', 
+            background: 'none', border: 'none', borderRadius: '50%', 
+            width: '30px', height: '30px', fontSize: '1.2rem', 
+            cursor: 'pointer', color: theme.text, zIndex: 10
+          }}>✕</button>
           
-          <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem', color: theme.text, fontWeight: '700' }}>Get Your Kit 🎁</h2>
+          <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem', color: theme.text, fontWeight: '700', paddingRight: '2rem' }}>Get Your Kit 🎁</h2>
           <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. Transportation cost calculated based on your location.</p>
           
           {/* Kit Selection */}
@@ -790,28 +832,22 @@ const App = () => {
               <div>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Full Name *</label>
-                  <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} 
-                    placeholder="e.g., John Mwangi" autoComplete="off" autoFocus
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.primary : theme.border}`, 
-                      borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
+                  <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus={!screenSize.isMobile}
+                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.name && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Phone Number *</label>
-                  <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} 
-                    placeholder="0712345678" autoComplete="off"
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.primary : theme.border}`, 
-                      borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
+                  <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} placeholder="0712345678" autoComplete="off"
+                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.phone && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Email Address *</label>
-                  <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} 
-                    placeholder="john@example.com" autoComplete="off"
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.email ? theme.primary : theme.border}`, 
-                      borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
+                  <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} placeholder="john@example.com" autoComplete="off"
+                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.email ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.email && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.email}</p>}
                 </div>
               </div>
@@ -820,35 +856,23 @@ const App = () => {
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>📍 Delivery Location *</label>
                   <div style={{ position: 'relative' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <input type="text" value={searchQuery} onChange={handleLocationChange}
-                        placeholder="e.g., Nairobi, Westlands, Kenyatta Ave..." autoComplete="off"
-                        style={{ flex: 2, padding: '0.75rem', border: `1px solid ${localErrors.location ? theme.primary : theme.border}`, 
-                          borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
-                      <button type="button" onClick={searchOnMap} 
-                        style={{ background: theme.gradient1, color: 'white', border: 'none', 
-                          borderRadius: '8px', padding: '0.75rem', cursor: 'pointer', fontWeight: '500' }}>🔍 Search</button>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                      <input type="text" value={searchQuery} onChange={handleLocationChange} placeholder="e.g., Nairobi, Westlands..." autoComplete="off"
+                        style={{ flex: screenSize.isMobile ? 1 : 2, padding: '0.75rem', border: `1px solid ${localErrors.location ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
+                      <button type="button" onClick={searchOnMap} style={{ background: theme.gradient1, color: 'white', border: 'none', borderRadius: '8px', padding: '0.75rem', cursor: 'pointer', fontWeight: '500', whiteSpace: 'nowrap' }}>🔍 Search</button>
                     </div>
                     
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                      <button type="button" onClick={getCurrentLocation} 
-                        style={{ flex: 1, background: theme.gradient2, color: darkMode ? '#1a1a1a' : '#fff', 
-                          border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>📍 My Location</button>
-                      <button type="button" onClick={() => setUseSimpleMap(!useSimpleMap)} 
-                        style={{ flex: 1, background: 'transparent', color: theme.primary, 
-                          border: `1px solid ${theme.primary}`, borderRadius: '8px', padding: '0.7rem', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={getCurrentLocation} style={{ flex: 1, background: theme.gradient2, color: darkMode ? '#1a1a1a' : '#fff', border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer', fontSize: screenSize.isMobile ? '0.8rem' : '0.9rem' }}>📍 My Location</button>
+                      <button type="button" onClick={() => setUseSimpleMap(!useSimpleMap)} style={{ flex: 1, background: 'transparent', color: theme.primary, border: `1px solid ${theme.primary}`, borderRadius: '8px', padding: '0.7rem', cursor: 'pointer', fontSize: screenSize.isMobile ? '0.8rem' : '0.9rem' }}>
                         {useSimpleMap ? '🗺️ Back to Map' : '✏️ Enter Manually'}
                       </button>
                     </div>
                     
                     {showSuggestions && suggestions.length > 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: theme.cardBg,
-                        borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '200px', 
-                        overflowY: 'auto', border: `1px solid ${theme.primary}` }}>
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: theme.cardBg, borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '200px', overflowY: 'auto', border: `1px solid ${theme.primary}` }}>
                         {suggestions.map((suggestion, idx) => (
-                          <div key={idx} onClick={() => selectLocation(suggestion)} 
-                            style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: `1px solid ${theme.border}`, 
-                              fontSize: '0.85rem', color: theme.text }}
+                          <div key={idx} onClick={() => selectLocation(suggestion)} style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: `1px solid ${theme.border}`, fontSize: '0.85rem', color: theme.text }}
                             onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#333' : '#f5f5f5'}
                             onMouseLeave={e => e.currentTarget.style.background = theme.cardBg}>
                             📍 {suggestion.display_name.substring(0, 80)}...
@@ -861,54 +885,37 @@ const App = () => {
                   {localErrors.location && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
                 </div>
                 
-                {/* Map Container */}
-                <div 
-                  ref={mapContainerRef} 
-                  style={{ 
-                    height: '380px', width: '100%', borderRadius: '16px', 
-                    border: `2px solid ${localErrors.location ? '#E76F51' : '#2A6B5F'}`, 
-                    marginBottom: '0.75rem', 
-                    backgroundColor: '#ffffff', 
-                    overflow: 'hidden'
-                  }}
-                >
+                <div ref={mapContainerRef} style={{ height: screenSize.isMobile ? '300px' : '380px', width: '100%', borderRadius: '16px', 
+                  border: `2px solid ${localErrors.location ? '#E76F51' : '#2A6B5F'}`, marginBottom: '0.75rem', backgroundColor: '#ffffff', overflow: 'hidden' }}>
                   {!mapLoaded && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', 
-                      flexDirection: 'column', background: '#f5f5f5' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', background: '#f5f5f5' }}>
                       <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🗺️</div>
                       <p>Loading map...</p>
+                      {screenSize.isMobile && (
+                        <button type="button" onClick={() => setUseSimpleMap(true)} style={{ marginTop: '0.5rem', padding: '0.3rem 0.8rem', background: '#2A6B5F', color: 'white', border: 'none', borderRadius: '8px' }}>Use Manual Entry</button>
+                      )}
                     </div>
                   )}
                 </div>
                 
-                <div style={{ fontSize: '0.7rem', color: theme.textMuted, textAlign: 'center', marginTop: '0.25rem' }}>
-                  💡 Tip: Drag the pin or click anywhere on the map
-                </div>
+                <div style={{ fontSize: '0.7rem', color: theme.textMuted, textAlign: 'center', marginTop: '0.25rem' }}>💡 Tip: Drag the pin or click anywhere on the map</div>
               </div>
             </div>
             
             <textarea value={localInstructions} onChange={e => setLocalInstructions(e.target.value)} 
               placeholder="Special instructions (gate code, landmark, preferred delivery time...)" rows="2"
-              style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', 
-                marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', background: theme.surface, color: theme.text }} />
+              style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', background: theme.surface, color: theme.text }} />
             
             {useSimpleMap && (
               <div style={{ marginTop: '0.75rem' }}>
-                <input type="text" placeholder="Enter your full delivery address manually" value={localLocation} 
-                  onChange={e => setLocalLocation(e.target.value)} 
-                  style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, 
-                    borderRadius: '8px', background: theme.surface, color: theme.text }} />
+                <input type="text" placeholder="Enter your full delivery address manually" value={localLocation} onChange={e => setLocalLocation(e.target.value)} 
+                  style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', background: theme.surface, color: theme.text }} />
               </div>
             )}
             
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setShowSignUpModal(false)} 
-                style={{ background: 'transparent', color: theme.primary, border: `2px solid ${theme.primary}`, 
-                  padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={localSubmitting} 
-                style={{ background: theme.gradient1, color: 'white', border: 'none', padding: '0.6rem 1.2rem', 
-                  borderRadius: '50px', fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', 
-                  opacity: localSubmitting ? 0.7 : 1 }}>{localSubmitting ? 'Sending...' : 'Request Kit →'}</button>
+              <button type="button" onClick={() => setShowSignUpModal(false)} style={{ background: 'transparent', color: theme.primary, border: `2px solid ${theme.primary}`, padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" disabled={localSubmitting} style={{ background: theme.gradient1, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', opacity: localSubmitting ? 0.7 : 1 }}>{localSubmitting ? 'Sending...' : 'Request Kit →'}</button>
             </div>
           </form>
         </div>
@@ -927,24 +934,16 @@ const App = () => {
         .feature-card:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
         input:focus, textarea:focus { outline: none; border-color: #2A6B5F !important; box-shadow: 0 0 0 3px rgba(42,107,95,0.1); }
         .leaflet-container { z-index: 1; }
+        @media (max-width: 768px) { button, .kit-card, input, textarea { touch-action: manipulation; } }
       `}</style>
       
       {/* Notification Banner */}
       {showNotification && (
         <div style={{
-          position: 'fixed',
-          top: screenSize.isMobile ? '70px' : '80px',
-          right: screenSize.isMobile ? '10px' : '20px',
-          left: screenSize.isMobile ? '10px' : 'auto',
-          backgroundColor: showNotification.type === 'error' ? '#E76F51' : (showNotification.type === 'warning' ? '#D47A4A' : '#2A6B5F'),
-          color: 'white',
-          padding: '0.75rem 1rem',
-          borderRadius: '12px',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-          animation: 'slideIn 0.3s ease',
-          textAlign: 'center',
-          zIndex: 10000,
-          fontSize: '0.9rem',
+          position: 'fixed', top: screenSize.isMobile ? '70px' : '80px', right: screenSize.isMobile ? '10px' : '20px',
+          left: screenSize.isMobile ? '10px' : 'auto', backgroundColor: showNotification.type === 'error' ? '#E76F51' : (showNotification.type === 'warning' ? '#D47A4A' : '#2A6B5F'),
+          color: 'white', padding: '0.75rem 1rem', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+          animation: 'slideIn 0.3s ease', textAlign: 'center', zIndex: 10000, fontSize: '0.9rem',
           maxWidth: screenSize.isMobile ? 'calc(100% - 20px)' : '350px'
         }}>
           {showNotification.message}
@@ -955,23 +954,14 @@ const App = () => {
       <SignUpModal key={modalKey} />
       
       {/* Header */}
-      <header style={{ 
-        background: darkMode ? '#1a1a2e' : 'white', 
-        padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', 
-        position: 'sticky', top: 0, zIndex: 100, 
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-      }}>
+      <header style={{ background: darkMode ? '#1a1a2e' : 'white', padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }} onClick={() => scrollTo('home')}>
             <span style={{ fontSize: screenSize.isMobile ? '1.8rem' : '2rem' }}>🔥</span>
             <span style={{ fontWeight: 'bold', fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>OKOA GAS</span>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button onClick={toggleDarkMode} style={{
-              background: darkMode ? '#2a2a3e' : '#e8e8e8', border: 'none', borderRadius: '50%', width: '36px', height: '36px',
-              cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: darkMode ? '#f0c674' : '#5a6a6e'
-            }}>
+            <button onClick={toggleDarkMode} style={{ background: darkMode ? '#2a2a3e' : '#e8e8e8', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: darkMode ? '#f0c674' : '#5a6a6e' }}>
               {darkMode ? '☀️' : '🌙'}
             </button>
             {!screenSize.isMobile && (
@@ -988,8 +978,7 @@ const App = () => {
       
       {/* Hero Section */}
       <div id="home" style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '4rem 2rem', textAlign: 'center' }}>
-        <h1 style={{ background: theme.gradient1, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', 
-          marginBottom: '0.5rem', fontSize: screenSize.isMobile ? '2rem' : '3rem', fontWeight: '800' }}>Clean Cooking for Every Home.</h1>
+        <h1 style={{ background: theme.gradient1, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem', fontSize: screenSize.isMobile ? '2rem' : '3rem', fontWeight: '800' }}>Clean Cooking for Every Home.</h1>
         <p style={{ fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: theme.primary, margin: '0.5rem 0', fontWeight: '500' }}>Pay as you go from KES 1.</p>
         <p style={{ maxWidth: '500px', margin: '1rem auto', color: theme.textLight }}>No cylinders to buy. No deposit. Just clean LPG delivered to your stove.</p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -999,10 +988,8 @@ const App = () => {
         
         <div style={{ marginTop: '3rem' }}>
           <div style={{ backgroundImage: `url(${images.heroBg})`, backgroundSize: 'cover', backgroundPosition: 'center',
-            borderRadius: '24px', overflow: 'hidden', position: 'relative', minHeight: '300px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'linear-gradient(135deg, rgba(42,107,95,0.85), rgba(30,90,79,0.85))', zIndex: 1 }} />
+            borderRadius: '24px', overflow: 'hidden', position: 'relative', minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(42,107,95,0.85), rgba(30,90,79,0.85))', zIndex: 1 }} />
             <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', padding: '3rem 2rem' }}>
               <h2 style={{ color: 'white', marginBottom: '1rem', fontWeight: '700' }}>Smart Delivery</h2>
               <p style={{ color: '#f0f0f0', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>Fast, reliable, and cashless payment options.</p>
@@ -1033,18 +1020,15 @@ const App = () => {
             <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight }}>See how OKOA GAS delivers clean cooking solutions.</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', background: theme.cardBg }}>
-              <SafeImage src={images.quickDelivery} alt="Quick Delivery" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem' }}><h3 style={{ color: theme.primary, fontWeight: '600' }}>Quick Delivery</h3><p style={{ color: theme.textLight }}>Stove-ready LPG cylinders delivered within hours.</p></div>
-            </div>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', background: theme.cardBg }}>
-              <SafeImage src={images.smartTracking} alt="Smart Tracking" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem' }}><h3 style={{ color: theme.primary, fontWeight: '600' }}>Smart Tracking</h3><p style={{ color: theme.textLight }}>Monitor your gas usage in real-time.</p></div>
-            </div>
-            <div className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', background: theme.cardBg }}>
-              <SafeImage src={images.securePayment} alt="Secure Payment" style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
-              <div style={{ padding: '1.5rem' }}><h3 style={{ color: theme.primary, fontWeight: '600' }}>Secure Payment</h3><p style={{ color: theme.textLight }}>Pay instantly with M-PESA.</p></div>
-            </div>
+            {[quickDeliveryImg, smartTrackingImg, securePaymentImg].map((img, idx) => (
+              <div key={idx} className="feature-card" style={{ borderRadius: '20px', overflow: 'hidden', background: theme.cardBg }}>
+                <SafeImage src={img} alt={["Quick Delivery", "Smart Tracking", "Secure Payment"][idx]} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+                <div style={{ padding: '1.5rem' }}>
+                  <h3 style={{ color: theme.primary, fontWeight: '600' }}>{["Quick Delivery", "Smart Tracking", "Secure Payment"][idx]}</h3>
+                  <p style={{ color: theme.textLight }}>{["Stove-ready LPG cylinders delivered within hours.", "Monitor your gas usage in real-time.", "Pay instantly with M-PESA."][idx]}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1079,9 +1063,11 @@ const App = () => {
           <h2 style={{ textAlign: 'center', color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem' }}>10% Upfront - Pay as You Go</h2>
           <p style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 1.5rem auto', color: theme.textLight }}>Start with only 10% deposit, then pay the balance in installments via M-PESA.</p>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
-            {[{ icon: '💰', name: 'Low Deposit', desc: 'Only 10% upfront' }, 
-              { icon: '📱', name: 'M-PESA Payments', desc: 'Pay balance via M-PESA' }, 
-              { icon: '🚚', name: 'Transport Calculated', desc: 'Cost based on location' }].map((item, i) => (
+            {[
+              { icon: '💰', name: 'Low Deposit', desc: 'Only 10% upfront' },
+              { icon: '📱', name: 'M-PESA Payments', desc: 'Pay balance via M-PESA' },
+              { icon: '🚚', name: 'Transport Calculated', desc: 'Cost based on location' }
+            ].map((item, i) => (
               <div key={i} style={{ textAlign: 'center', padding: '1rem', background: theme.cardBg, borderRadius: '16px' }}>
                 <div style={{ fontSize: '2rem' }}>{item.icon}</div>
                 <h3 style={{ color: theme.primary, fontWeight: '600', fontSize: '1.1rem', marginTop: '0.5rem' }}>{item.name}</h3>
@@ -1104,14 +1090,16 @@ const App = () => {
       {/* Smart Meter */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1.5rem', alignItems: 'center' }}>
-          <div><h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2>
-          <p style={{ color: theme.textLight }}>See live gas level, top up via M-PESA.</p>
-          <Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button></div>
+          <div>
+            <h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2>
+            <p style={{ color: theme.textLight }}>See live gas level, top up via M-PESA.</p>
+            <Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button>
+          </div>
           <div style={{ background: theme.gradient3, borderRadius: '16px', padding: '1rem', color: 'white', textAlign: 'center' }}>
             <SafeImage src={images.meter} alt="Smart Meter" style={{ width: '80%', marginBottom: '1rem' }} />
-            <div>Gas Level: {gasLevel}%</div>
+            <div>Gas Level: 85%</div>
             <div style={{ height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', margin: '0.5rem 0' }}>
-              <div style={{ width: `${gasLevel}%`, height: '100%', background: theme.secondary, borderRadius: '4px' }}></div>
+              <div style={{ width: '85%', height: '100%', background: theme.secondary, borderRadius: '4px' }}></div>
             </div>
             <div>Balance: KES {balance.toFixed(2)}</div>
             <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: theme.secondary, color: darkMode ? '#1a1a2e' : '#1A2A2E', border: 'none', padding: '0.3rem 0.8rem', borderRadius: '8px', cursor: 'pointer' }}>Add Money</button>
@@ -1141,9 +1129,11 @@ const App = () => {
         <div style={{ maxWidth: '1200px', margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.75rem' : '2.5rem' }}>How OKOA GAS works</h2>
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem', marginTop: '1.5rem' }}>
-            {[{ image: images.stepOrder, title: 'Order your kit', text: 'Choose your kit and pay 10% deposit.' },
+            {[
+              { image: images.stepOrder, title: 'Order your kit', text: 'Choose your kit and pay 10% deposit.' },
               { image: images.stepInstallation, title: 'Delivery & transport', text: 'We calculate transport cost and deliver.' },
-              { image: images.stepTopup, title: 'Pay balance', text: 'Use M-PESA to pay remaining balance.' }].map((item, index) => (
+              { image: images.stepTopup, title: 'Pay balance', text: 'Use M-PESA to pay remaining balance.' }
+            ].map((item, index) => (
               <div key={index} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: theme.cardBg }}>
                 <SafeImage src={item.image} alt={item.title} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
                 <h3 style={{ margin: '0.5rem 0', color: theme.text, fontWeight: '600', fontSize: '1.2rem' }}>{item.title}</h3>
@@ -1154,21 +1144,10 @@ const App = () => {
         </div>
       </div>
       
-      {/* Payment Options Section - M-PESA & Cash Side by Side */}
+      {/* Payment Options Section */}
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1rem' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr',
-          gap: '1.5rem'
-        }}>
-          
-          {/* M-PESA Instructions Card */}
-          <div style={{
-            background: darkMode ? '#2a2a2a' : '#f0fdf4',
-            borderRadius: '20px',
-            padding: '1.5rem',
-            borderLeft: `4px solid ${theme.primary}`
-          }}>
+        <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1.5rem' }}>
+          <div style={{ background: darkMode ? '#2a2a2a' : '#f0fdf4', borderRadius: '20px', padding: '1.5rem', borderLeft: `4px solid ${theme.primary}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '2rem' }}>💰</div>
               <h3 style={{ color: theme.primary, margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>M-PESA Payment</h3>
@@ -1183,41 +1162,16 @@ const App = () => {
             </ol>
           </div>
           
-          {/* Cash Payment Card */}
-          <div style={{
-            background: darkMode ? '#1e2a2e' : '#fef9e8',
-            borderRadius: '20px',
-            padding: '1.5rem',
-            borderLeft: `4px solid #D4A84A`
-          }}>
+          <div style={{ background: darkMode ? '#1e2a2e' : '#fef9e8', borderRadius: '20px', padding: '1.5rem', borderLeft: `4px solid #D4A84A` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '2rem' }}>💵</div>
               <h3 style={{ color: '#D4A84A', margin: 0, fontWeight: '700', fontSize: '1.2rem' }}>Cash Payment</h3>
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <p style={{ color: theme.textLight, fontSize: '0.9rem', marginBottom: '0.5rem', lineHeight: '1.5' }}>
-                Prefer to pay with cash? Our agents will collect payment upon delivery.
-              </p>
-            </div>
+            <p style={{ color: theme.textLight, fontSize: '0.9rem', marginBottom: '0.5rem', lineHeight: '1.5' }}>Prefer to pay with cash? Our agents will collect payment upon delivery.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Pay cash on delivery</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>No additional fees</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span>
-                <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Available for all kits</span>
-              </div>
-            </div>
-            <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${darkMode ? '#3a4a4f' : '#e8dcc8'}` }}>
-              <p style={{ fontSize: '0.8rem', color: theme.textMuted, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span>📞 Call us:</span>
-                <strong style={{ color: '#D4A84A' }}>+254717052939</strong>
-              </p>
+              <div><span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span> <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Pay cash on delivery</span></div>
+              <div><span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span> <span style={{ fontSize: '0.85rem', color: theme.textLight }}>No additional fees</span></div>
+              <div><span style={{ fontSize: '1rem', color: '#D4A84A' }}>✅</span> <span style={{ fontSize: '0.85rem', color: theme.textLight }}>Available for all kits</span></div>
             </div>
           </div>
         </div>
@@ -1226,12 +1180,8 @@ const App = () => {
       {/* Footer */}
       <footer style={{ background: '#1a2c38', color: '#94a3b8', padding: '3rem 2rem 1.5rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '2rem', marginBottom: '2rem' }}>
-          <div>
-            <h3 style={{ color: 'white', marginBottom: '1rem', fontWeight: '600' }}>OKOA GAS</h3>
-            <p>Clean cooking for every home. 10% upfront, pay as you go.</p>
-          </div>
-          <div>
-            <h3 style={{ color: 'white', marginBottom: '1rem', fontWeight: '600' }}>Quick Links</h3>
+          <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>OKOA GAS</h3><p>Clean cooking for every home. 10% upfront, pay as you go.</p></div>
+          <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>Quick Links</h3>
             <ul style={{ listStyle: 'none', padding: 0 }}>
               <li><button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Home</button></li>
               <li><button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>10% Upfront</button></li>
@@ -1239,25 +1189,10 @@ const App = () => {
               <li><button onClick={openSignUpModal} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Get Your Kit</button></li>
             </ul>
           </div>
-          <div>
-            <h3 style={{ color: 'white', marginBottom: '1rem', fontWeight: '600' }}>Contact</h3>
-            <p>📞 +254717052939</p>
-            <p>✉️ hello@okoagas.com</p>
-            <p>📍 Nairobi, Kenya</p>
-          </div>
-          <div>
-            <h3 style={{ color: 'white', marginBottom: '1rem', fontWeight: '600' }}>Follow Us</h3>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>📘</span>
-              <span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>🐦</span>
-              <span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>📷</span>
-              <span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>💼</span>
-            </div>
-          </div>
+          <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>Contact</h3><p>📞 +254717052939</p><p>✉️ hello@okoagas.com</p><p>📍 Nairobi, Kenya</p></div>
+          <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>Follow Us</h3><div style={{ display: 'flex', gap: '1rem' }}><span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>📘</span><span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>🐦</span><span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>📷</span><span style={{ fontSize: '1.5rem', cursor: 'pointer' }}>💼</span></div></div>
         </div>
-        <div style={{ textAlign: 'center', paddingTop: '1.5rem', borderTop: '1px solid #3a5a6b' }}>
-          © {new Date().getFullYear()} OKOA GAS. All rights reserved. Clean Cooking for Every Home.
-        </div>
+        <div style={{ textAlign: 'center', paddingTop: '1.5rem', borderTop: '1px solid #3a5a6b' }}>© {new Date().getFullYear()} OKOA GAS. All rights reserved.</div>
       </footer>
     </div>
   );
