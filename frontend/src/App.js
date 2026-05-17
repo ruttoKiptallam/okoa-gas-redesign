@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-
 // ============================================
 // ALL IMAGE IMPORTS - LOCAL .WEBP FILES
 // ============================================
@@ -89,8 +88,8 @@ const App = () => {
   // --- Dark Mode State ---
   const [darkMode, setDarkMode] = useState(false);
   
-  // --- Modal Key for Reset ---
-  const [modalKey, setModalKey] = useState(0);
+  // --- ModalKey removed to prevent remount flicker ---
+
   
   // --- State ---
   // gasLevel is used in the smart meter display, but if not used, comment it out
@@ -123,18 +122,18 @@ const App = () => {
   
   const [selectedKit, setSelectedKit] = useState(kitOptions[0]);
   
-  // --- Map State ---
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [useSimpleMap, setUseSimpleMap] = useState(false);
-  const [mapInitialized, setMapInitialized] = useState(false);
-  const mapContainerRef = useRef(null);
-  const [coordinates, setCoordinates] = useState({ lat: -1.286389, lng: 36.817223 });
+  // --- Map removed: location is now plain text/suggestions only ---
   
-  // --- Open modal with reset key ---
+  // Coordinates state was part of the removed map feature.
+  // Keep the UI functional without any map dependency.
+  // const [coordinates, setCoordinates] = useState({ lat: 0, lng: 0 });
+
+  
+  // --- Open modal with reset key
   const openSignUpModal = useCallback(() => {
     setShowSignUpModal(true);
-    setModalKey(prev => prev + 1);
   }, []);
+
 
   // --- Notification System ---
   const showMessage = useCallback((msg, type = 'success') => {
@@ -153,11 +152,7 @@ const App = () => {
         orientation: newOrientation
       });
       
-      if (window.currentMap && !useSimpleMap) {
-        setTimeout(() => {
-          window.currentMap.invalidateSize();
-        }, 200);
-      }
+
     };
     
     window.addEventListener('resize', handleResize);
@@ -167,142 +162,11 @@ const App = () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
     };
-  }, [useSimpleMap]);
+  }, []);
 
-  // --- Load Leaflet Map CSS and JS ---
-  useEffect(() => {
-    if (showSignUpModal && !mapLoaded && !useSimpleMap) {
-      if (typeof window.L !== 'undefined') {
-        setMapLoaded(true);
-        return;
-      }
-      
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-      
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => {
-        setMapLoaded(true);
-      };
-      script.onerror = () => {
-        console.error('Map load failed');
-        showMessage('Map failed to load. Please use manual address entry.', 'warning');
-        setUseSimpleMap(true);
-      };
-      document.head.appendChild(script);
-    }
-  }, [showSignUpModal, mapLoaded, useSimpleMap, showMessage]);
 
-  // --- Initialize Map ---
-  useEffect(() => {
-    if (!showSignUpModal || !mapLoaded || useSimpleMap || !mapContainerRef.current) return;
-    if (mapInitialized) return;
-    
-    const timer = setTimeout(() => {
-      try {
-        if (window.currentMap) {
-          window.currentMap.remove();
-          window.currentMap = null;
-        }
-        
-        const map = window.L.map(mapContainerRef.current).setView([coordinates.lat, coordinates.lng], 14);
-        
-        window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-          subdomains: 'abcd',
-          maxZoom: 19,
-          minZoom: 10
-        }).addTo(map);
-        
-        const marker = window.L.marker([coordinates.lat, coordinates.lng], { draggable: true }).addTo(map);
-        
-        marker.on('dragend', async (e) => {
-          const pos = marker.getLatLng();
-          setCoordinates({ lat: pos.lat, lng: pos.lng });
-          await reverseGeocode(pos.lat, pos.lng);
-        });
-        
-        map.on('click', async (e) => {
-          marker.setLatLng(e.latlng);
-          setCoordinates({ lat: e.latlng.lat, lng: e.latlng.lng });
-          await reverseGeocode(e.latlng.lat, e.latlng.lng);
-        });
-        
-        window.currentMap = map;
-        window.currentMarker = marker;
-        setMapInitialized(true);
-        
-        setTimeout(() => map.invalidateSize(), 100);
-        
-      } catch (error) {
-        console.error('Map error:', error);
-        showMessage('Map failed to initialize. Using manual address entry.', 'warning');
-        setUseSimpleMap(true);
-      }
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [showSignUpModal, mapLoaded, useSimpleMap, coordinates, mapInitialized, showMessage]);
 
-  const reverseGeocode = async (lat, lng) => {
-    try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-      const data = await response.json();
-      if (data?.display_name && window.updateLocationDisplay) {
-        window.updateLocationDisplay(data.display_name);
-      }
-    } catch (error) {
-      console.error('Reverse geocode error:', error);
-    }
-  };
 
-  // --- Get Current Location ---
-  const getCurrentLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      showMessage('Geolocation not supported. Please enter address manually.', 'warning');
-      setUseSimpleMap(true);
-      return;
-    }
-    
-    showMessage('📍 Getting your location...', 'info');
-    
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setCoordinates({ lat: latitude, lng: longitude });
-        
-        if (window.currentMap && window.currentMarker) {
-          window.currentMap.setView([latitude, longitude], 16);
-          window.currentMarker.setLatLng([latitude, longitude]);
-        }
-        
-        try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await response.json();
-          if (data?.display_name && window.updateLocationDisplay) {
-            window.updateLocationDisplay(data.display_name);
-          }
-          showMessage('✅ Location detected! Drag pin to adjust.', 'success');
-        } catch (error) {
-          showMessage('📍 Location captured! You can drag pin to adjust.', 'success');
-        }
-      },
-      (error) => {
-        let msg = 'Unable to get location. ';
-        if (error.code === error.PERMISSION_DENIED) {
-          msg += 'Please allow location access.';
-        } else {
-          msg += 'Please enter address manually.';
-        }
-        showMessage(msg, 'error');
-        setUseSimpleMap(true);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }, [showMessage]);
 
   // --- Phone Number Normalization ---
   const normalizeMpesaPhone = useCallback((phone) => {
@@ -332,7 +196,7 @@ const App = () => {
         if (data.ResultCode === '0') {
           clearInterval(interval);
           setBalance(prev => prev + amount);
-          showMessage(`💰 Payment successful! Added KES ${amount}. New balance: KES ${(balance + amount).toFixed(2)}`, 'success');
+          showMessage(`💰 Payment successful! Added KES ${amount}.`, 'success');
           setProcessingPayment(false);
           setShowPaymentModal(false);
           setPaymentPhone('');
@@ -345,23 +209,26 @@ const App = () => {
       } catch (error) {
         console.error('Status check error:', error);
       }
+
       if (attempts >= 30) {
         clearInterval(interval);
-        if (processingPayment) {
-          showMessage('Payment timeout. Check your M-PESA messages.', 'warning');
-          setProcessingPayment(false);
-        }
+        setProcessingPayment(false);
+        showMessage('Payment timeout. Check your M-PESA messages.', 'warning');
       }
     }, 2000);
-  }, [API_URL, balance, showMessage, processingPayment]);
+  }, [API_URL, showMessage]);
 
   const initiateMpesaPayment = useCallback(async () => {
     if (!paymentPhone) {
+
+
+
       showMessage('Please enter your M-PESA phone number', 'error');
       return;
     }
 
     const formattedPhone = normalizeMpesaPhone(paymentPhone);
+
     if (!formattedPhone) {
       showMessage('Enter a valid Kenyan phone number (e.g., 0712345678)', 'error');
       return;
@@ -403,6 +270,7 @@ const App = () => {
       setProcessingPayment(false);
     }
   }, [paymentPhone, paymentAmount, API_URL, normalizeMpesaPhone, showMessage, pollPaymentStatus]);
+
 
   const simulateMpesaPayment = useCallback(() => {
     if (!paymentPhone) {
@@ -495,9 +363,9 @@ const App = () => {
   // ============================================
   const PaymentModal = useCallback(() => {
     if (!showPaymentModal) return null;
-    
+
     const presetAmounts = [100, 200, 500, 1000];
-    
+
     return (
       <div style={{ 
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
@@ -508,8 +376,7 @@ const App = () => {
         <div style={{ 
           backgroundColor: darkMode ? '#1e1e2e' : '#ffffff', 
           borderRadius: '28px', maxWidth: '460px', width: '100%', 
-          padding: '1.75rem', position: 'relative',
-          animation: 'fadeInUp 0.3s ease'
+          padding: '1.75rem', position: 'relative'
         }} onClick={e => e.stopPropagation()}>
           
           <button onClick={() => setShowPaymentModal(false)} style={{ 
@@ -580,14 +447,9 @@ const App = () => {
     const [localPhone, setLocalPhone] = useState('');
     const [localEmail, setLocalEmail] = useState('');
     const [localInstructions, setLocalInstructions] = useState('');
-    const [localLocation, setLocalLocation] = useState('');
     const [localSelectedKitId, setLocalSelectedKitId] = useState(selectedKit.id);
     const [localErrors, setLocalErrors] = useState({});
     const [localSubmitting, setLocalSubmitting] = useState(false);
-    const [localLocationStatus, setLocalLocationStatus] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [suggestions, setSuggestions] = useState([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
     
     // Track previous values using refs (FIXES dependency warnings)
     const prevShowRef = useRef(showSignUpModal);
@@ -605,16 +467,8 @@ const App = () => {
        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showSignUpModal]);
     
-    // Set up global callback for map location - runs once (FIXED: empty array)
-    useEffect(() => {
-      window.updateLocationDisplay = (address) => {
-        setLocalLocation(address);
-        setSearchQuery(address);
-        setLocalLocationStatus('✅ Location selected from map');
-      };
-      return () => { delete window.updateLocationDisplay; };
-    }, []); // ✅ Empty array - runs once, no warnings
-    
+    // Location removed from signup form.
+
     // Reset form when modal opens - uses refs to avoid dependency warnings (FIXED: no dependency array)
      // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
@@ -632,13 +486,8 @@ const App = () => {
         setLocalPhone('');
         setLocalEmail('');
         setLocalInstructions('');
-        setLocalLocation('');
-        setSearchQuery('');
         setLocalSelectedKitId(selectedKit.id);
         setLocalErrors({});
-        setLocalLocationStatus('');
-        setSuggestions([]);
-        setShowSuggestions(false);
       }
       
       // Update kit selection if changed while modal is open
@@ -655,83 +504,15 @@ const App = () => {
     
     const localSelectedKit = kitOptions.find(k => k.id === localSelectedKitId) || kitOptions[0];
     
-    const searchLocationWithSuggestions = async (query) => {
-      if (!query.trim()) {
-        setSuggestions([]);
-        setShowSuggestions(false);
-        return;
-      }
-      try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
-        const results = await response.json();
-        setSuggestions(results);
-        setShowSuggestions(results.length > 0);
-      } catch (error) {
-        console.error('Search error:', error);
-      }
-    };
+
     
-    const handleLocationChange = (e) => {
-      const value = e.target.value;
-      setSearchQuery(value);
-      setLocalLocation(value);
-      if (value.length > 2) {
-        searchLocationWithSuggestions(value);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    };
-    
-    const selectLocation = async (result) => {
-      const { lat, lon, display_name } = result;
-      const latitude = parseFloat(lat);
-      const longitude = parseFloat(lon);
-      setCoordinates({ lat: latitude, lng: longitude });
-      setLocalLocation(display_name);
-      setSearchQuery(display_name);
-      setLocalLocationStatus('✅ Location selected!');
-      setShowSuggestions(false);
-      setSuggestions([]);
-      
-      if (window.currentMap && window.currentMarker) {
-        window.currentMap.setView([latitude, longitude], 15);
-        window.currentMarker.setLatLng([latitude, longitude]);
-      }
-    };
-    
-    const searchOnMap = async () => {
-      if (!searchQuery.trim()) {
-        setLocalLocationStatus('Enter a location to search');
-        return;
-      }
-      setLocalLocationStatus('Searching...');
-      try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`);
-        const results = await response.json();
-        if (results.length > 0) {
-          const { lat, lon, display_name } = results[0];
-          const latitude = parseFloat(lat);
-          const longitude = parseFloat(lon);
-          setCoordinates({ lat: latitude, lng: longitude });
-          setLocalLocation(display_name);
-          setSearchQuery(display_name);
-          setLocalLocationStatus('✅ Address found on map!');
-          if (window.currentMap && window.currentMarker) {
-            window.currentMap.setView([latitude, longitude], 15);
-            window.currentMarker.setLatLng([latitude, longitude]);
-          }
-        } else {
-          setLocalLocationStatus('❌ Address not found');
-        }
-      } catch (error) {
-        setLocalLocationStatus('Search failed');
-      }
-    };
+    // Location removed from signup form.
+    // getCurrentLocation / searchOnMap etc. removed as well.
+
     
     const sendEmailNotification = (formDataToSend) => {
       const subject = `NEW KIT REQUEST: ${formDataToSend.name} - ${formDataToSend.kitName}`;
-      const body = `NEW KIT REQUEST\n\nName: ${formDataToSend.name}\nPhone: ${formDataToSend.phone}\nEmail: ${formDataToSend.email}\nKit: ${formDataToSend.kitName}\nLocation: ${formDataToSend.location}\nInstructions: ${formDataToSend.instructions || 'None'}`;
+      const body = `NEW KIT REQUEST\n\nName: ${formDataToSend.name}\nPhone: ${formDataToSend.phone}\nEmail: ${formDataToSend.email}\nKit: ${formDataToSend.kitName}\nInstructions: ${formDataToSend.instructions || 'None'}`;
       const mailtoLink = `mailto:ruttokitallam@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.open(mailtoLink, '_blank');
       return true;
@@ -744,7 +525,6 @@ const App = () => {
       else if (!/^(\+254|254|0)[17]\d{8}$/.test(localPhone)) errors.phone = 'Valid Kenyan phone required';
       if (!localEmail.trim()) errors.email = 'Email required';
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(localEmail)) errors.email = 'Valid email required';
-      if (!localLocation) errors.location = 'Location required';
       return errors;
     };
     
@@ -766,7 +546,6 @@ const App = () => {
         kitName: localSelectedKit.fullName,
         kitSize: localSelectedKit.size,
         fullPrice: localSelectedKit.fullPrice,
-        location: localLocation,
         instructions: localInstructions
       };
       
@@ -795,10 +574,10 @@ const App = () => {
           maxWidth: screenSize.isMobile ? '95%' : '1000px', 
           width: '100%', 
           maxHeight: screenSize.isMobile ? '85vh' : '90vh', 
-          overflowY: 'auto', 
-          padding: screenSize.isMobile ? '1rem' : '1.5rem', 
-          position: 'relative', 
-          animation: 'fadeInUp 0.3s ease',
+          overflowY: 'auto',
+          padding: screenSize.isMobile ? '1rem' : '1.5rem',
+          position: 'relative',
+
           WebkitOverflowScrolling: 'touch'
         }} onClick={e => e.stopPropagation()}>
           
@@ -810,7 +589,7 @@ const App = () => {
           }}>✕</button>
           
           <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem', color: theme.text, fontWeight: '700', paddingRight: '2rem' }}>Get Your Kit 🎁</h2>
-          <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. Transportation cost calculated based on your location.</p>
+          <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. We’ll confirm delivery details with you shortly.</p>
           
           {/* Kit Selection */}
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -854,51 +633,8 @@ const App = () => {
               
               <div>
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>📍 Delivery Location *</label>
-                  <div style={{ position: 'relative' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                      <input type="text" value={searchQuery} onChange={handleLocationChange} placeholder="e.g., Nairobi, Westlands..." autoComplete="off"
-                        style={{ flex: screenSize.isMobile ? 1 : 2, padding: '0.75rem', border: `1px solid ${localErrors.location ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
-                      <button type="button" onClick={searchOnMap} style={{ background: theme.gradient1, color: 'white', border: 'none', borderRadius: '8px', padding: '0.75rem', cursor: 'pointer', fontWeight: '500', whiteSpace: 'nowrap' }}>🔍 Search</button>
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                      <button type="button" onClick={getCurrentLocation} style={{ flex: 1, background: theme.gradient2, color: darkMode ? '#1a1a1a' : '#fff', border: 'none', borderRadius: '8px', padding: '0.7rem', cursor: 'pointer', fontSize: screenSize.isMobile ? '0.8rem' : '0.9rem' }}>📍 My Location</button>
-                      <button type="button" onClick={() => setUseSimpleMap(!useSimpleMap)} style={{ flex: 1, background: 'transparent', color: theme.primary, border: `1px solid ${theme.primary}`, borderRadius: '8px', padding: '0.7rem', cursor: 'pointer', fontSize: screenSize.isMobile ? '0.8rem' : '0.9rem' }}>
-                        {useSimpleMap ? '🗺️ Back to Map' : '✏️ Enter Manually'}
-                      </button>
-                    </div>
-                    
-                    {showSuggestions && suggestions.length > 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: theme.cardBg, borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 100, maxHeight: '200px', overflowY: 'auto', border: `1px solid ${theme.primary}` }}>
-                        {suggestions.map((suggestion, idx) => (
-                          <div key={idx} onClick={() => selectLocation(suggestion)} style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: `1px solid ${theme.border}`, fontSize: '0.85rem', color: theme.text }}
-                            onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#333' : '#f5f5f5'}
-                            onMouseLeave={e => e.currentTarget.style.background = theme.cardBg}>
-                            📍 {suggestion.display_name.substring(0, 80)}...
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {localLocationStatus && <p style={{ color: theme.primary, fontSize: '0.8rem', marginTop: '0.25rem' }}>{localLocationStatus}</p>}
-                  {localErrors.location && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
                 </div>
                 
-                <div ref={mapContainerRef} style={{ height: screenSize.isMobile ? '300px' : '380px', width: '100%', borderRadius: '16px', 
-                  border: `2px solid ${localErrors.location ? '#E76F51' : '#2A6B5F'}`, marginBottom: '0.75rem', backgroundColor: '#ffffff', overflow: 'hidden' }}>
-                  {!mapLoaded && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', background: '#f5f5f5' }}>
-                      <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🗺️</div>
-                      <p>Loading map...</p>
-                      {screenSize.isMobile && (
-                        <button type="button" onClick={() => setUseSimpleMap(true)} style={{ marginTop: '0.5rem', padding: '0.3rem 0.8rem', background: '#2A6B5F', color: 'white', border: 'none', borderRadius: '8px' }}>Use Manual Entry</button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                <div style={{ fontSize: '0.7rem', color: theme.textMuted, textAlign: 'center', marginTop: '0.25rem' }}>💡 Tip: Drag the pin or click anywhere on the map</div>
               </div>
             </div>
             
@@ -906,12 +642,7 @@ const App = () => {
               placeholder="Special instructions (gate code, landmark, preferred delivery time...)" rows="2"
               style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', background: theme.surface, color: theme.text }} />
             
-            {useSimpleMap && (
-              <div style={{ marginTop: '0.75rem' }}>
-                <input type="text" placeholder="Enter your full delivery address manually" value={localLocation} onChange={e => setLocalLocation(e.target.value)} 
-                  style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', background: theme.surface, color: theme.text }} />
-              </div>
-            )}
+
             
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setShowSignUpModal(false)} style={{ background: 'transparent', color: theme.primary, border: `2px solid ${theme.primary}`, padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
@@ -951,7 +682,9 @@ const App = () => {
       )}
       
       <PaymentModal />
-      <SignUpModal key={modalKey} />
+      <SignUpModal />
+      
+
       
       {/* Header */}
       <header style={{ background: darkMode ? '#1a1a2e' : 'white', padding: screenSize.isMobile ? '0.75rem 1rem' : '1rem 2rem', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
@@ -967,7 +700,7 @@ const App = () => {
             {!screenSize.isMobile && (
               <>
                 <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>
-                <button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>10% Upfront</button>
+                
                 <button onClick={() => scrollTo('safety')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Safety</button>
               </>
             )}
@@ -982,8 +715,7 @@ const App = () => {
         <p style={{ fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: theme.primary, margin: '0.5rem 0', fontWeight: '500' }}>Pay as you go from KES 1.</p>
         <p style={{ maxWidth: '500px', margin: '1rem auto', color: theme.textLight }}>No cylinders to buy. No deposit. Just clean LPG delivered to your stove.</p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Button onClick={openSignUpModal}>Get Your Kit →</Button>
-          <Button onClick={() => setShowPaymentModal(true)} primary={false}>Top Up M-PESA</Button>
+          <Button onClick={openSignUpModal}>Get Your Kit →</Button>          
         </div>
         
         <div style={{ marginTop: '3rem' }}>
@@ -1087,25 +819,8 @@ const App = () => {
         </div>
       </div>
       
-      {/* Smart Meter */}
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '1.5rem', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ color: theme.text, fontWeight: '700', fontSize: screenSize.isMobile ? '1.3rem' : '1.8rem' }}>Monitor & Control</h2>
-            <p style={{ color: theme.textLight }}>See live gas level, top up via M-PESA.</p>
-            <Button onClick={() => setShowPaymentModal(true)}>Top Up M-PESA</Button>
-          </div>
-          <div style={{ background: theme.gradient3, borderRadius: '16px', padding: '1rem', color: 'white', textAlign: 'center' }}>
-            <SafeImage src={images.meter} alt="Smart Meter" style={{ width: '80%', marginBottom: '1rem' }} />
-            <div>Gas Level: 85%</div>
-            <div style={{ height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', margin: '0.5rem 0' }}>
-              <div style={{ width: '85%', height: '100%', background: theme.secondary, borderRadius: '4px' }}></div>
-            </div>
-            <div>Balance: KES {balance.toFixed(2)}</div>
-            <button onClick={() => setShowPaymentModal(true)} style={{ marginTop: '0.5rem', background: theme.secondary, color: darkMode ? '#1a1a2e' : '#1A2A2E', border: 'none', padding: '0.3rem 0.8rem', borderRadius: '8px', cursor: 'pointer' }}>Add Money</button>
-          </div>
-        </div>
-      </div>
+      
+
       
       {/* Safety Section */}
       <div id="safety" style={{ background: '#1a2c38', padding: screenSize.isMobile ? '2rem 1rem' : '3rem 2rem' }}>
@@ -1179,12 +894,11 @@ const App = () => {
       
       {/* Footer */}
       <footer style={{ background: '#1a2c38', color: '#94a3b8', padding: '3rem 2rem 1.5rem' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '2rem', marginBottom: '2rem' }}>
-          <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>OKOA GAS</h3><p>Clean cooking for every home. 10% upfront, pay as you go.</p></div>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '2rem', marginBottom: '2rem' }}>          
           <div><h3 style={{ color: 'white', marginBottom: '1rem' }}>Quick Links</h3>
             <ul style={{ listStyle: 'none', padding: 0 }}>
               <li><button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Home</button></li>
-              <li><button onClick={() => scrollTo('promise')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>10% Upfront</button></li>
+             
               <li><button onClick={() => scrollTo('safety')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Safety</button></li>
               <li><button onClick={openSignUpModal} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Get Your Kit</button></li>
             </ul>

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "github.com/IPGeolocation/ipgeolocation-io-mcp": {
+      "command": "npx",
+      "args": ["-y", "ipgeolocation-io-mcp"],
+      "env": {
+        "IPGEOLOCATION_API_KEY": ""
+      }
+    }
+  }
+}
+
