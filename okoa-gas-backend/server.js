@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -17,6 +18,40 @@ const CONSUMER_SECRET = process.env.CONSUMER_SECRET || '';
 const SHORTCODE = process.env.SHORTCODE || '174379';
 const PASSKEY = process.env.PASSKEY || 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
 const CALLBACK_URL = process.env.CALLBACK_URL || 'http://localhost:5000/api/mpesa/callback';
+
+// --- Email transporter (SMTP / Gmail) ---
+function createTransporter() {
+  // Priority: credentials file → individual env vars → ethereal test account
+  const gmailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || '';
+  const gmailPass = process.env.GMAIL_PASS || process.env.EMAIL_PASS || '';
+
+  if (gmailUser && gmailPass) {
+    return nodemailer.createTransport({ service: 'gmail', auth: { user: gmailUser, pass: gmailPass } });
+  }
+  // Fallback: console-only logger
+  return nodemailer.createTransport({ streamTransport: true, newline: 'unix', buffer: true });
+}
+
+async function sendKitRequestEmail(data) {
+  const transporter = createTransporter();
+  const subject = `NEW KIT REQUEST: ${data.name} - ${data.kitName}`;
+  const html = `
+    <h2>New Kit Request</h2>
+    <p><strong>Name:</strong> ${data.name}</p>
+    <p><strong>Phone:</strong> ${data.phone}</p>
+    <p><strong>Email:</strong> ${data.email}</p>
+    <p><strong>Kit:</strong> ${data.kitName} <small>(${data.kitSize})</small></p>
+    <p><strong>Full Price:</strong> KES ${Number(data.fullPrice).toLocaleString()}</p>
+    <p><strong>Instructions:</strong> ${data.instructions || 'None'}</p>
+  `;
+  const mailOptions = {
+    from: process.env.GMAIL_USER || 'noreply@okoagas.com',
+    to: 'uttokiptallam@gmail.com',
+    subject,
+    html
+  };
+  return transporter.sendMail(mailOptions);
+}
 
 // Get OAuth Token
 async function getAccessToken() {
@@ -204,7 +239,31 @@ app.post('/api/mpesa/callback', (req, res) => {
 });
 
 // ============================================
-// ✅ FIXED: 404 HANDLER - NO ASTERISK NEEDED
+// 404 HANDLER
+// ============================================
+
+// ============================================
+// KIT REQUEST ENDPOINT
+// ============================================
+app.post('/api/request-kit', async (req, res) => {
+  const { name, phone, email, kitName, kitSize, fullPrice, instructions } = req.body;
+
+  if (!name || !phone || !email || !kitName) {
+    return res.status(400).json({ success: false, message: 'Name, phone, email, and kit name are required' });
+  }
+
+  try {
+    const result = await sendKitRequestEmail({ name, phone, email, kitName, kitSize, instructions, fullPrice });
+    console.log('📬 Email sent:', result.messageId);
+    res.json({ success: true, message: 'Kit request received. We will contact you shortly.', messageId: result.messageId });
+  } catch (error) {
+    console.error('Email error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send request. Please try again.' });
+  }
+});
+
+// ============================================
+// 404 HANDLER
 // ============================================
 app.use((req, res) => {
     res.status(404).json({ 
@@ -214,7 +273,8 @@ app.use((req, res) => {
             'GET /api/health',
             'POST /api/mpesa/pay',
             'POST /api/mpesa/status',
-            'POST /api/mpesa/callback'
+            'POST /api/mpesa/callback',
+            'POST /api/request-kit'
         ]
     });
 });

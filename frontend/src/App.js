@@ -488,6 +488,7 @@ const App = () => {
         setLocalInstructions('');
         setLocalSelectedKitId(selectedKit.id);
         setLocalErrors({});
+        setLocalSubmitting(false); // ✅ Reset submitting state on open
       }
       
       // Update kit selection if changed while modal is open
@@ -498,7 +499,7 @@ const App = () => {
       // Update refs
       prevShowRef.current = showSignUpModal;
       prevKitIdRef.current = selectedKit.id;
-    }); // ✅ NO dependencies - uses refs to track changes, no warnings
+    }, []); // ✅ Empty deps — runs only when modal opens/closes
     
     if (!showSignUpModal) return null;
     
@@ -510,12 +511,24 @@ const App = () => {
     // getCurrentLocation / searchOnMap etc. removed as well.
 
     
-    const sendEmailNotification = (formDataToSend) => {
-      const subject = `NEW KIT REQUEST: ${formDataToSend.name} - ${formDataToSend.kitName}`;
-      const body = `NEW KIT REQUEST\n\nName: ${formDataToSend.name}\nPhone: ${formDataToSend.phone}\nEmail: ${formDataToSend.email}\nKit: ${formDataToSend.kitName}\nInstructions: ${formDataToSend.instructions || 'None'}`;
-      const mailtoLink = `mailto:ruttokitallam@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.open(mailtoLink, '_blank');
-      return true;
+    const sendEmailNotification = async (formDataToSend) => {
+      // Primary: POST to backend over mobile data (absolute URL — works on all devices)
+      try {
+        const resp = await fetch(`${API_URL}/api/request-kit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formDataToSend)
+        });
+        if (!resp.ok) throw new Error('Server responded ' + resp.status);
+        return true;
+      } catch (err) {
+        console.warn('API unavailable, falling back to mailto:', err.message);
+        // Fallback: open user's mail client via mailto: link
+        const subject = `NEW KIT REQUEST: ${formDataToSend.name} - ${formDataToSend.kitName}`;
+        const body = `NEW KIT REQUEST\n\nName: ${formDataToSend.name}\nPhone: ${formDataToSend.phone}\nEmail: ${formDataToSend.email}\nKit: ${formDataToSend.kitName}\nInstructions: ${formDataToSend.instructions || 'None'}`;
+        window.location.href = `mailto:uttokiptallam@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        return false;
+      }
     };
     
     const validateLocalForm = () => {
@@ -528,7 +541,7 @@ const App = () => {
       return errors;
     };
     
-    const handleLocalSubmit = (e) => {
+    const handleLocalSubmit = async (e) => {
       e.preventDefault();
       const errors = validateLocalForm();
       if (Object.keys(errors).length > 0) {
@@ -549,11 +562,11 @@ const App = () => {
         instructions: localInstructions
       };
       
-      sendEmailNotification(emailData);
+      const ok = await sendEmailNotification(emailData);
       setSelectedKit(localSelectedKit);
       
       setTimeout(() => {
-        showMessage(`✅ Thank you ${localName}! Your request has been sent.`, 'success');
+        showMessage(ok ? `✅ Thank you ${localName}! Your request has been sent.` : `⚠️ ${localName}, your browser client could not reach the server. A draft email has been opened — please send it manually.`, 'success');
         setLocalSubmitting(false);
         setShowSignUpModal(false);
       }, 1500);
@@ -563,22 +576,24 @@ const App = () => {
       <div style={{ 
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
         backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, 
-        display: 'flex', alignItems: 'center', justifyContent: 'center', 
-        padding: screenSize.isMobile ? '0.5rem' : '1rem', 
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',  // ✅ flex-start so content starts at top
+        padding: screenSize.isMobile ? '1rem 0.5rem' : '1rem',               // ✅ bottom padding for keyboard room
         overflowY: 'auto',
+        overflowX: 'hidden',
         WebkitOverflowScrolling: 'touch'
       }} onClick={() => setShowSignUpModal(false)}>
         <div style={{ 
           background: theme.cardBg, 
           borderRadius: '24px', 
-          maxWidth: screenSize.isMobile ? '95%' : '1000px', 
+          maxWidth: '1000px', 
           width: '100%', 
-          maxHeight: screenSize.isMobile ? '85vh' : '90vh', 
+          maxHeight: '85vh', 
           overflowY: 'auto',
+          overflowX: 'hidden',
           padding: screenSize.isMobile ? '1rem' : '1.5rem',
           position: 'relative',
-
-          WebkitOverflowScrolling: 'touch'
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'manipulation' // ✅ suppress double-tap zoom on buttons
         }} onClick={e => e.stopPropagation()}>
           
           <button onClick={() => setShowSignUpModal(false)} style={{ 
@@ -592,16 +607,15 @@ const App = () => {
           <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. We’ll confirm delivery details with you shortly.</p>
           
           {/* Kit Selection */}
-          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
             {kitOptions.map(kit => (
               <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} 
                 style={{ border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : theme.border}`, borderRadius: '12px', 
                   padding: '0.75rem', cursor: 'pointer', background: localSelectedKitId === kit.id ? `${theme.primary}10` : theme.cardBg }}>
-                <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '80px', objectFit: 'contain' }} />
-                <div style={{ fontWeight: 'bold', fontSize: '0.85rem', textAlign: 'center', color: theme.text }}>{kit.fullName} ({kit.size})</div>
-                <div style={{ fontSize: '0.7rem', color: theme.textMuted, textAlign: 'center' }}>{kit.cooker}</div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: theme.primary, textAlign: 'center' }}>10% Deposit</div>
-                <div style={{ fontSize: '0.65rem', color: theme.textMuted, textAlign: 'center' }}>Full: KES {kit.fullPrice.toLocaleString()}</div>
+                <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '60px', objectFit: 'contain' }} />
+                <div style={{ fontWeight: 'bold', fontSize: '0.75rem', textAlign: 'center', color: theme.text }}>{kit.fullName}</div>
+                <div style={{ fontSize: '0.65rem', color: theme.textMuted, textAlign: 'center' }}>{kit.size}</div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: theme.primary, textAlign: 'center' }}>10% Deposit</div>
               </div>
             ))}
           </div>
@@ -612,6 +626,7 @@ const App = () => {
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Full Name *</label>
                   <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus={!screenSize.isMobile}
+                    inputMode="text"
                     style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.name && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
                 </div>
@@ -619,6 +634,7 @@ const App = () => {
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Phone Number *</label>
                   <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} placeholder="0712345678" autoComplete="off"
+                    inputMode="tel"
                     style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.phone && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
                 </div>
@@ -626,6 +642,7 @@ const App = () => {
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Email Address *</label>
                   <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} placeholder="john@example.com" autoComplete="off"
+                    inputMode="email" autoCapitalize="none" autoCorrect="off"
                     style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.email ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
                   {localErrors.email && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.email}</p>}
                 </div>
@@ -640,7 +657,8 @@ const App = () => {
             
             <textarea value={localInstructions} onChange={e => setLocalInstructions(e.target.value)} 
               placeholder="Special instructions (gate code, landmark, preferred delivery time...)" rows="2"
-              style={{ width: '100%', padding: '0.6rem', border: `1px solid ${theme.border}`, borderRadius: '8px', marginTop: '0.75rem', fontSize: '0.9rem', resize: 'vertical', background: theme.surface, color: theme.text }} />
+              inputMode="text" autoCapitalize="sentences" autoCorrect="off"
+              style={{ width: '100%', padding: '0.75rem', border: `1px solid ${theme.border}`, borderRadius: '8px', marginTop: '0.75rem', fontSize: screenSize.isMobile ? '16px' : '0.9rem', touchAction: 'manipulation', resize: 'vertical', background: theme.surface, color: theme.text }} />
             
 
             
@@ -774,17 +792,30 @@ const App = () => {
             <p style={{ maxWidth: '680px', margin: '1rem auto 0', color: theme.textLight }}>Choose the perfect kit. Pay only 10% deposit.</p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1.5rem' }}>
-            {kitOptions.map(kit => (
+          <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '1.5rem' }}>
+            {[
+              { id: '6kg', name: 'Family Starter Kit', size: '6kg', cooker: '2-Burner', priceLabel: '10% Deposit', fullPrice: 5000, monthly: 'from KES 500', img: images.cylinder6kg, popular: true },
+              { id: '13kg', name: 'Family Plus Kit', size: '13kg', cooker: '3-Burner', priceLabel: '10% Deposit', fullPrice: 8000, monthly: 'from KES 800', img: images.cylinder13kg, popular: false },
+              { id: 'commercial', name: 'Commercial Kit', size: '50kg', cooker: '6-Burner', priceLabel: '10% Deposit', fullPrice: 25000, monthly: 'from KES 2,500', img: images.commercialKit, popular: false },
+            ].map(kit => (
               <div key={kit.id} className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: theme.cardBg, textAlign: 'center' }}>
-                <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
-                <h3 style={{ margin: '0.5rem 0', color: theme.primary, fontWeight: '600', fontSize: '1.2rem' }}>{kit.fullName}</h3>
+                <SafeImage src={kit.img} alt={kit.name} style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+                <h3 style={{ margin: '0.5rem 0', color: theme.primary, fontWeight: '600', fontSize: '1.2rem' }}>{kit.name}</h3>
                 <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7 }}>{kit.size} with {kit.cooker}</p>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', fontWeight: 'bold', color: theme.primary }}>10% Deposit</div>
+                <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', fontWeight: 'bold', color: theme.primary }}>{kit.priceLabel}</div>
                 <div style={{ fontSize: '0.8rem', color: theme.textMuted }}>Full: KES {kit.fullPrice.toLocaleString()}</div>
                 <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: theme.textLight }}>{kit.monthly}</div>
               </div>
             ))}
+            {/* Smart Meter card */}
+            <div className="feature-card" style={{ padding: '1.5rem', borderRadius: '24px', background: theme.cardBg, textAlign: 'center' }}>
+              <SafeImage src={images.meter} alt="Smart Meter" style={{ width: '100%', height: '120px', objectFit: 'contain', marginBottom: '1rem' }} />
+              <h3 style={{ margin: '0.5rem 0', color: theme.primary, fontWeight: '600', fontSize: '1.2rem' }}>Monitor &amp; Control</h3>
+              <p style={{ margin: 0, color: theme.textLight, lineHeight: 1.7 }}>Smart Meter</p>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', fontWeight: 'bold', color: theme.primary }}>10% Deposit</div>
+              <div style={{ fontSize: '0.8rem', color: theme.textMuted }}>Full: KES 3,000</div>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: theme.textLight }}>from KES 300</div>
+            </div>
           </div>
         </div>
       </div>
