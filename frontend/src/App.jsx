@@ -142,25 +142,48 @@ const App = () => {
   }, []);
 
   // --- Screen Resize Handler ---
+  const resizeTimeoutRef = useRef(null);
+  const resizeTimerRef = useRef(null);
   useEffect(() => {
+    let rafId = null;
     const handleResize = () => {
-      const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-      setScreenSize({
-        isMobile: window.innerWidth < 768,
-        width: window.innerWidth,
-        height: window.innerHeight,
-        orientation: newOrientation
+      // Use requestAnimationFrame so layout changes (keyboard open/close) finish before we measure
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        // Debounce: clear any pending state update timer
+        if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+        // Only setState after 400 ms of inactivity (covers rapid keyboard open/close + dock/undock)
+        resizeTimerRef.current = setTimeout(() => {
+          const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+          setScreenSize(prev => {
+            // Skip update if nothing actually changed — prevents unnecessary re-renders
+            if (
+              prev.isMobile === (window.innerWidth < 768) &&
+              prev.width === window.innerWidth &&
+              prev.height === window.innerHeight &&
+              prev.orientation === newOrientation
+            ) {
+              return prev;
+            }
+            return {
+              isMobile: window.innerWidth < 768,
+              width: window.innerWidth,
+              height: window.innerHeight,
+              orientation: newOrientation
+            };
+          });
+        }, 400);
       });
-      
-
     };
-    
+
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
-    
+
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
     };
   }, []);
 
@@ -585,14 +608,14 @@ const App = () => {
           padding: screenSize.isMobile ? '1rem 0.5rem' : '1rem',
           overflowY: 'auto',
           overflowX: 'hidden',
-          paddingTop: 'env(keyboard-inset-top, 1rem)',
           WebkitOverflowScrolling: 'touch',
-          // Allow pointer events through so inputs always receive touches
-          touchAction: 'none'
+          // Allow all tap gestures through to form inputs; only vertical scroll is blocked here
+          touchAction: 'pan-y'
         }} 
         onClick={(e) => {
-          // Only close when tapping the backdrop itself, not form contents
-          if (e.target === e.currentTarget) setShowSignUpModal(false);
+          if (e.target === e.currentTarget) {
+            setShowSignUpModal(false);
+          }
         }}
       >
         <div 
