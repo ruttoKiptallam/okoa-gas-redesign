@@ -447,6 +447,7 @@ const App = () => {
     const [localPhone, setLocalPhone] = useState('');
     const [localEmail, setLocalEmail] = useState('');
     const [localInstructions, setLocalInstructions] = useState('');
+    const [localLocation, setLocalLocation] = useState('');
     const [localSelectedKitId, setLocalSelectedKitId] = useState(selectedKit.id);
     const [localErrors, setLocalErrors] = useState({});
     const [localSubmitting, setLocalSubmitting] = useState(false);
@@ -486,6 +487,7 @@ const App = () => {
         setLocalPhone('');
         setLocalEmail('');
         setLocalInstructions('');
+        setLocalLocation('');
         setLocalSelectedKitId(selectedKit.id);
         setLocalErrors({});
         setLocalSubmitting(false); // ✅ Reset submitting state on open
@@ -538,6 +540,7 @@ const App = () => {
       else if (!/^(\+254|254|0)[17]\d{8}$/.test(localPhone)) errors.phone = 'Valid Kenyan phone required';
       if (!localEmail.trim()) errors.email = 'Email required';
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(localEmail)) errors.email = 'Valid email required';
+      if (!localLocation.trim()) errors.location = 'Location required';
       return errors;
     };
     
@@ -556,6 +559,7 @@ const App = () => {
         name: localName,
         phone: localPhone,
         email: localEmail,
+        location: localLocation,
         kitName: localSelectedKit.fullName,
         kitSize: localSelectedKit.size,
         fullPrice: localSelectedKit.fullPrice,
@@ -573,98 +577,282 @@ const App = () => {
     };
     
     return (
-      <div style={{ 
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-        backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, 
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',  // ✅ flex-start so content starts at top
-        padding: screenSize.isMobile ? '1rem 0.5rem' : '1rem',               // ✅ bottom padding for keyboard room
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch'
-      }} onClick={() => setShowSignUpModal(false)}>
-        <div style={{ 
-          background: theme.cardBg, 
-          borderRadius: '24px', 
-          maxWidth: '1000px', 
-          width: '100%', 
-          maxHeight: '85vh', 
+      <div 
+        style={{ 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, 
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          padding: screenSize.isMobile ? '1rem 0.5rem' : '1rem',
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: screenSize.isMobile ? '1rem' : '1.5rem',
-          position: 'relative',
+          paddingTop: 'env(keyboard-inset-top, 1rem)',
           WebkitOverflowScrolling: 'touch',
-          touchAction: 'manipulation' // ✅ suppress double-tap zoom on buttons
-        }} onClick={e => e.stopPropagation()}>
+          // Allow pointer events through so inputs always receive touches
+          touchAction: 'none'
+        }} 
+        onClick={(e) => {
+          // Only close when tapping the backdrop itself, not form contents
+          if (e.target === e.currentTarget) setShowSignUpModal(false);
+        }}
+      >
+        <div 
+          style={{ 
+            background: theme.cardBg, 
+            borderRadius: '24px', 
+            maxWidth: '1000px', 
+            width: '100%', 
+            minHeight: '90vh',
+            height: 'auto',
+            maxHeight: 'min(90vh, 95vh)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: screenSize.isMobile ? '1rem' : '1.5rem',
+            position: 'relative',
+            WebkitOverflowScrolling: 'touch',
+            // Always allow native touch on the card's contents
+            touchAction: 'manipulation'
+          }} 
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
           
-          <button onClick={() => setShowSignUpModal(false)} style={{ 
-            position: 'absolute', top: '0.5rem', right: '0.5rem', 
-            background: 'none', border: 'none', borderRadius: '50%', 
-            width: '30px', height: '30px', fontSize: '1.2rem', 
-            cursor: 'pointer', color: theme.text, zIndex: 10
-          }}>✕</button>
+          <button 
+            onClick={() => setShowSignUpModal(false)} 
+            style={{ 
+              position: 'absolute', top: '0.5rem', right: '0.5rem', 
+              background: 'none', border: 'none', borderRadius: '50%', 
+              width: '44px', height: '44px',          // ✅ 44px minimum touch target
+              fontSize: '1.4rem', 
+              cursor: 'pointer', color: theme.text, zIndex: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'manipulation'
+            }} 
+            aria-label="Close"
+          >✕</button>
           
           <h2 style={{ fontSize: screenSize.isMobile ? '1.3rem' : '1.5rem', marginBottom: '0.5rem', color: theme.text, fontWeight: '700', paddingRight: '2rem' }}>Get Your Kit 🎁</h2>
-          <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. We’ll confirm delivery details with you shortly.</p>
+          <p style={{ fontSize: '0.85rem', color: theme.textLight, marginBottom: '1rem' }}>Pay only 10% deposit. We'll confirm delivery details with you shortly.</p>
           
           {/* Kit Selection */}
           <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
             {kitOptions.map(kit => (
-              <div key={kit.id} onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} 
-                style={{ border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : theme.border}`, borderRadius: '12px', 
-                  padding: '0.75rem', cursor: 'pointer', background: localSelectedKitId === kit.id ? `${theme.primary}10` : theme.cardBg }}>
-                <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '60px', objectFit: 'contain' }} />
+              <div 
+                key={kit.id} 
+                onClick={() => { setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }} 
+                onTouchEnd={(e) => { e.preventDefault(); setLocalSelectedKitId(kit.id); setSelectedKit(kit); showMessage(`${kit.fullName} selected!`, 'success'); }}
+                role="button"
+                tabIndex={0}
+                aria-pressed={localSelectedKitId === kit.id}
+                style={{ 
+                  border: `2px solid ${localSelectedKitId === kit.id ? theme.primary : theme.border}`, 
+                  borderRadius: '12px', 
+                  padding: '0.75rem', cursor: 'pointer', background: localSelectedKitId === kit.id ? `${theme.primary}10` : theme.cardBg,
+                  WebkitTapHighlightColor: 'transparent',
+                  userSelect: 'none',
+                  touchAction: 'manipulation'
+                }}
+              >
+                <SafeImage src={kit.id === '6kg' ? images.cylinder6kg : (kit.id === '13kg' ? images.cylinder13kg : images.commercialKit)} alt={kit.fullName} style={{ width: '100%', height: '60px', objectFit: 'contain', pointerEvents: 'none', borderRadius: '8px', display: 'block' }} />
                 <div style={{ fontWeight: 'bold', fontSize: '0.75rem', textAlign: 'center', color: theme.text }}>{kit.fullName}</div>
-                <div style={{ fontSize: '0.65rem', color: theme.textMuted, textAlign: 'center' }}>{kit.size}</div>
                 <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: theme.primary, textAlign: 'center' }}>10% Deposit</div>
               </div>
             ))}
           </div>
           
-          <form onSubmit={handleLocalSubmit}>
+          <form 
+            id="kit-request-form"
+            name="kitRequest"
+            onSubmit={handleLocalSubmit} 
+            noValidate
+            autoComplete="on"
+            autoCapitalize="off"       // ✅ form-level: Android disables autocapitalize across all inputs
+            autoCorrect="off"          // ✅ form-level: Android disables autocorrect across all inputs
+            spellCheck="false"         // ✅ form-level: Android disables spellcheck on all inputs
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleLocalSubmit(e); }
+            }}
+            style={{ touchAction: 'manipulation' }}
+          >
             <div style={{ display: 'grid', gridTemplateColumns: screenSize.isMobile ? '1fr' : '1fr 1fr', gap: '0.75rem' }}>
               <div>
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Full Name *</label>
-                  <input type="text" value={localName} onChange={e => setLocalName(e.target.value)} placeholder="e.g., John Mwangi" autoComplete="off" autoFocus={!screenSize.isMobile}
+                  <label htmlFor="reg-name" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text, fontSize: '1rem' }}>Full Name *</label>
+                  <input 
+                    id="reg-name"
+                    name="name" 
+                    type="text" 
+                    value={localName} 
+                    onChange={e => setLocalName(e.target.value)} 
+                    placeholder="e.g., John Mwangi" 
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="words"
+                    spellCheck="false"
                     inputMode="text"
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.name ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
-                  {localErrors.name && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
+                    aria-required="true"
+                    aria-invalid={!!localErrors.name}
+                    aria-describedby={localErrors.name ? 'name-error' : undefined}
+                    style={{ 
+                      width: '100%', padding: '0.9rem',               // ✅ taller tap target
+                      border: `2px solid ${localErrors.name ? theme.primary : theme.border}`, 
+                      borderRadius: '10px',                            // ✅ slightly larger radius
+                      fontSize: '1rem', background: theme.surface, color: theme.text,
+                      boxSizing: 'border-box',
+                      WebkitAppearance: 'none',
+                      touchAction: 'manipulation'
+                    }} 
+                  />
+                  {localErrors.name && <p id="name-error" role="alert" style={{ color: '#E76F51', fontSize: '0.85rem', marginTop: '0.25rem' }}>{localErrors.name}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Phone Number *</label>
-                  <input type="tel" value={localPhone} onChange={e => setLocalPhone(e.target.value)} placeholder="0712345678" autoComplete="off"
+                  <label htmlFor="reg-phone" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text, fontSize: '1rem' }}>Phone Number *</label>
+                  <input 
+                    id="reg-phone"
+                    name="phone"
+                    type="tel" 
+                    value={localPhone} 
+                    onChange={e => setLocalPhone(e.target.value)} 
+                    placeholder="0712345678" 
+                    autoComplete="tel"
                     inputMode="tel"
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.phone ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
-                  {localErrors.phone && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
+                    aria-required="true"
+                    aria-invalid={!!localErrors.phone}
+                    aria-describedby={localErrors.phone ? 'phone-error' : undefined}
+                    style={{ 
+                      width: '100%', padding: '0.9rem',
+                      border: `2px solid ${localErrors.phone ? theme.primary : theme.border}`, 
+                      borderRadius: '10px', fontSize: '1rem', background: theme.surface, color: theme.text,
+                      boxSizing: 'border-box',
+                      WebkitAppearance: 'none',
+                      touchAction: 'manipulation'
+                    }} 
+                  />
+                  {localErrors.phone && <p id="phone-error" role="alert" style={{ color: '#E76F51', fontSize: '0.85rem', marginTop: '0.25rem' }}>{localErrors.phone}</p>}
                 </div>
                 
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text }}>Email Address *</label>
-                  <input type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)} placeholder="john@example.com" autoComplete="off"
-                    inputMode="email" autoCapitalize="none" autoCorrect="off"
-                    style={{ width: '100%', padding: '0.75rem', border: `1px solid ${localErrors.email ? theme.primary : theme.border}`, borderRadius: '8px', fontSize: '1rem', background: theme.surface, color: theme.text }} />
-                  {localErrors.email && <p style={{ color: '#E76F51', fontSize: '0.8rem', marginTop: '0.25rem' }}>{localErrors.email}</p>}
+                  <label htmlFor="reg-email" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text, fontSize: '1rem' }}>Email Address *</label>
+                  <input 
+                    id="reg-email"
+                    name="email"
+                    type="email" 
+                    value={localEmail} 
+                    onChange={e => setLocalEmail(e.target.value)} 
+                    placeholder="john@example.com" 
+                    autoComplete="email"
+                    inputMode="email" 
+                    autoCapitalize="none" 
+                    autoCorrect="off"
+                    spellCheck="false"
+                    aria-required="true"
+                    aria-invalid={!!localErrors.email}
+                    aria-describedby={localErrors.email ? 'email-error' : undefined}
+                    style={{ 
+                      width: '100%', padding: '0.9rem',
+                      border: `2px solid ${localErrors.email ? theme.primary : theme.border}`, 
+                      borderRadius: '10px', fontSize: '1rem', background: theme.surface, color: theme.text,
+                      boxSizing: 'border-box',
+                      WebkitAppearance: 'none',
+                      touchAction: 'manipulation'
+                    }} 
+                  />
+                  {localErrors.email && <p id="email-error" role="alert" style={{ color: '#E76F51', fontSize: '0.85rem', marginTop: '0.25rem' }}>{localErrors.email}</p>}
                 </div>
               </div>
               
               <div>
                 <div style={{ marginBottom: '0.75rem' }}>
+                  <label htmlFor="reg-location" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: theme.text, fontSize: '1rem' }}>Your Location *</label>
+                  <input 
+                    id="reg-location"
+                    name="location"
+                    type="text" 
+                    value={localLocation} 
+                    onChange={e => setLocalLocation(e.target.value)} 
+                    placeholder="e.g., South B, Nairobi" 
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="words"
+                    spellCheck="false"
+                    inputMode="text"
+                    aria-required="true"
+                    aria-invalid={!!localErrors.location}
+                    aria-describedby={localErrors.location ? 'location-error' : undefined}
+                    style={{ 
+                      width: '100%', padding: '0.9rem',
+                      border: `2px solid ${localErrors.location ? theme.primary : theme.border}`, 
+                      borderRadius: '10px', fontSize: '1rem', background: theme.surface, color: theme.text,
+                      boxSizing: 'border-box',
+                      WebkitAppearance: 'none',
+                      touchAction: 'manipulation'
+                    }} 
+                  />
+                  {localErrors.location && <p id="location-error" role="alert" style={{ color: '#E76F51', fontSize: '0.85rem', marginTop: '0.25rem' }}>{localErrors.location}</p>}
                 </div>
                 
               </div>
             </div>
             
-            <textarea value={localInstructions} onChange={e => setLocalInstructions(e.target.value)} 
-              placeholder="Special instructions (gate code, landmark, preferred delivery time...)" rows="2"
-              inputMode="text" autoCapitalize="sentences" autoCorrect="off"
-              style={{ width: '100%', padding: '0.75rem', border: `1px solid ${theme.border}`, borderRadius: '8px', marginTop: '0.75rem', fontSize: screenSize.isMobile ? '16px' : '0.9rem', touchAction: 'manipulation', resize: 'vertical', background: theme.surface, color: theme.text }} />
+            <textarea 
+              name="instructions"
+              value={localInstructions} 
+              onChange={e => setLocalInstructions(e.target.value)} 
+              placeholder="Special instructions (gate code, landmark, preferred delivery time...)" 
+              rows="3"
+              inputMode="text" 
+              autoCapitalize="sentences" 
+              autoCorrect="off"
+              spellCheck="false"
+              style={{ 
+                width: '100%', 
+                padding: '0.9rem', 
+                border: `2px solid ${theme.border}`, 
+                borderRadius: '10px', 
+                marginTop: '0.75rem', 
+                fontSize: screenSize.isMobile ? '16px' : '0.9rem',      // ✅ 16px prevents iOS zoom
+                touchAction: 'manipulation', 
+                resize: 'vertical', 
+                background: theme.surface, 
+                color: theme.text,
+                boxSizing: 'border-box',
+                WebkitAppearance: 'none'
+              }} 
+            />
+  
             
-
-            
-            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setShowSignUpModal(false)} style={{ background: 'transparent', color: theme.primary, border: `2px solid ${theme.primary}`, padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={localSubmitting} style={{ background: theme.gradient1, color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '50px', fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', opacity: localSubmitting ? 0.7 : 1 }}>{localSubmitting ? 'Sending...' : 'Request Kit →'}</button>
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button 
+                type="button" 
+                onClick={() => setShowSignUpModal(false)} 
+                style={{ 
+                  background: 'transparent', color: theme.primary, 
+                  border: `2px solid ${theme.primary}`, 
+                  padding: '0.75rem 1.5rem',      // ✅ larger tap target
+                  borderRadius: '50px', 
+                  fontWeight: '600', cursor: 'pointer',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: `${theme.primary}40`,
+                  minHeight: '48px'                // ✅ 48px minimum
+                }} 
+              >Cancel</button>
+              <button 
+                type="submit" 
+                disabled={localSubmitting}
+                formNoValidate
+                style={{ 
+                  background: theme.gradient1, color: 'white', border: 'none', 
+                  padding: '0.75rem 1.5rem',      // ✅ larger tap target
+                  borderRadius: '50px', 
+                  fontWeight: '600', cursor: localSubmitting ? 'not-allowed' : 'pointer', 
+                  opacity: localSubmitting ? 0.7 : 1,
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'rgba(42,107,95,0.3)',
+                  minHeight: '48px',               // ✅ 48px minimum
+                  transition: 'opacity 0.2s ease'
+                }} 
+              >{localSubmitting ? 'Sending...' : 'Request Kit →'}</button>
             </div>
           </form>
         </div>

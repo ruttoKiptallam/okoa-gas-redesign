@@ -40,6 +40,7 @@ async function sendKitRequestEmail(data) {
     <p><strong>Name:</strong> ${data.name}</p>
     <p><strong>Phone:</strong> ${data.phone}</p>
     <p><strong>Email:</strong> ${data.email}</p>
+    <p><strong>Location:</strong> ${data.location || 'Not provided'}</p>
     <p><strong>Kit:</strong> ${data.kitName} <small>(${data.kitSize})</small></p>
     <p><strong>Full Price:</strong> KES ${Number(data.fullPrice).toLocaleString()}</p>
     <p><strong>Instructions:</strong> ${data.instructions || 'None'}</p>
@@ -246,14 +247,14 @@ app.post('/api/mpesa/callback', (req, res) => {
 // KIT REQUEST ENDPOINT
 // ============================================
 app.post('/api/request-kit', async (req, res) => {
-  const { name, phone, email, kitName, kitSize, fullPrice, instructions } = req.body;
+  const { name, phone, email, location, kitName, kitSize, fullPrice, instructions } = req.body;
 
   if (!name || !phone || !email || !kitName) {
     return res.status(400).json({ success: false, message: 'Name, phone, email, and kit name are required' });
   }
 
   try {
-    const result = await sendKitRequestEmail({ name, phone, email, kitName, kitSize, instructions, fullPrice });
+    const result = await sendKitRequestEmail({ name, phone, email, location, kitName, kitSize, instructions, fullPrice });
     console.log('📬 Email sent:', result.messageId);
     res.json({ success: true, message: 'Kit request received. We will contact you shortly.', messageId: result.messageId });
   } catch (error) {
