@@ -1,15 +1,12 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# --- Node / package manager ---
 /node_modules
 **/node_modules
-/.pnp
+.pnp
 .pnp.js
 
-# testing
-/coverage
-
-# production / build outputs
+# --- Build / distribution outputs ---
 /build
 /frontend/build
 /okoa-gas-backend/build
@@ -17,7 +14,11 @@
 *.tgz
 *.tar.gz
 
-# logs
+# --- Test coverage ---
+/coverage
+.nyc_output
+
+# --- Logs ---
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -25,13 +26,12 @@ pnpm-debug.log*
 lerna-debug.log*
 *.log
 
-# runtime data
+# --- Runtime data ---
 pids
 *.pid
-*.seed
 *.pid.lock
 
-# environment files
+# --- Environment / secrets ---
 .env
 .env.*
 !.env.example
@@ -42,32 +42,30 @@ pids
 frontend/.env*
 okoa-gas-backend/.env*
 
-# OS files
+# --- OS / editor junk ---
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 *~
 
-# IDE files
-.vscode/
-.idea/
+# --- IDE files ---
+.vscode
+.idea
 *.sublime-project
 *.sublime-workspace
 
-# sensitive files
-*.mpesa
-*.key
-*.pem
-secrets.json
-
-# cache directories
+# --- Caches ---
 .cache/
 .tmp/
 temp/
 *.cache
-
-# misc
-.nyc_output
 .eslintcache
 .parcel-cache
+
+# --- Project-specific personal / scratch files (never commit) ---
+blackbox_mcp_settings.json
+check.js
+TODO.md
+DEPLOY_SEPARATE_FRONTEND_BACKEND.md
+package-lock.json  # root-level only — no package.json at root
