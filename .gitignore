@@ -65,7 +65,5 @@ temp/
 
 # --- Project-specific personal / scratch files (never commit) ---
 blackbox_mcp_settings.json
-check.js
 TODO.md
 DEPLOY_SEPARATE_FRONTEND_BACKEND.md
-package-lock.json  # root-level only — no package.json at root

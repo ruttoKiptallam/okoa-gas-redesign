@@ -111,7 +111,7 @@ const App = () => {
   const [processingPayment, setProcessingPayment] = useState(false);
   
   // --- API Base URL ---
-  const API_URL = process.env.VITE_API_URL || 'http://localhost:5000';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   
   // --- Kit Options ---
   const [kitOptions] = useState([
@@ -141,51 +141,59 @@ const App = () => {
     setTimeout(() => setShowNotification(null), 4000);
   }, []);
 
-  // --- Screen Resize Handler ---
-  const resizeTimeoutRef = useRef(null);
-  const resizeTimerRef = useRef(null);
-  useEffect(() => {
-    let rafId = null;
-    const handleResize = () => {
-      // Use requestAnimationFrame so layout changes (keyboard open/close) finish before we measure
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        // Debounce: clear any pending state update timer
-        if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-        // Only setState after 400 ms of inactivity (covers rapid keyboard open/close + dock/undock)
-        resizeTimerRef.current = setTimeout(() => {
-          const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-          setScreenSize(prev => {
-            // Skip update if nothing actually changed — prevents unnecessary re-renders
-            if (
-              prev.isMobile === (window.innerWidth < 768) &&
-              prev.width === window.innerWidth &&
-              prev.height === window.innerHeight &&
-              prev.orientation === newOrientation
-            ) {
-              return prev;
-            }
-            return {
-              isMobile: window.innerWidth < 768,
-              width: window.innerWidth,
-              height: window.innerHeight,
-              orientation: newOrientation
-            };
-          });
-        }, 400);
-      });
-    };
+// --- Screen Resize Handler ---
+   const resizeTimeoutRef = useRef(null);
+   const resizeTimerRef = useRef(null);
+   useEffect(() => {
+     let rafId = null;
+     const handleResize = () => {
+       // Use requestAnimationFrame so layout changes (keyboard open/close) finish before we measure
+       if (rafId) cancelAnimationFrame(rafId);
+       rafId = requestAnimationFrame(() => {
+         // Debounce: clear any pending state update timer
+         if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+         // Only setState after 500 ms of inactivity (covers rapid keyboard open/close + dock/undock)
+         resizeTimerRef.current = setTimeout(() => {
+           const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+           
+           // Skip update if height reduced significantly (keyboard open) to prevent flicker
+           const heightReduced = window.innerHeight < 400 && window.innerWidth > window.innerHeight * 2;
+           
+           setScreenSize(prev => {
+             // Skip update if nothing actually changed — prevents unnecessary re-renders
+             if (
+               prev.isMobile === (window.innerWidth < 768) &&
+               prev.width === window.innerWidth &&
+               prev.height === window.innerHeight &&
+               prev.orientation === newOrientation
+             ) {
+               return prev;
+             }
+             // Skip if keyboard likely opened (height reduced significantly)
+             if (heightReduced) {
+               return prev;
+             }
+             return {
+               isMobile: window.innerWidth < 768,
+               width: window.innerWidth,
+               height: window.innerHeight,
+               orientation: newOrientation
+             };
+           });
+         }, 500);
+       });
+     };
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
+     window.addEventListener('resize', handleResize);
+     window.addEventListener('orientationchange', handleResize);
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-    };
-  }, []);
+     return () => {
+       window.removeEventListener('resize', handleResize);
+       window.removeEventListener('orientationchange', handleResize);
+       if (rafId) cancelAnimationFrame(rafId);
+       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+     };
+   }, []);
 
 
 
@@ -366,20 +374,19 @@ const App = () => {
     }
   }, []);
 
-  // --- Button Component ---
-  const Button = useCallback(({ children, onClick, primary = true, small = false }) => (
-    <button onClick={onClick} style={{
-      background: primary ? theme.gradient1 : 'transparent',
-      color: primary ? 'white' : theme.primary,
-      border: primary ? 'none' : `2px solid ${theme.primary}`,
-      padding: small ? '0.5rem 1rem' : (screenSize.isMobile ? '0.6rem 1.2rem' : '0.75rem 1.5rem'),
-      borderRadius: '50px',
-      fontWeight: '600',
-      fontSize: small ? '0.85rem' : (screenSize.isMobile ? '0.9rem' : '1rem'),
-      cursor: 'pointer',
-      transition: 'all 0.3s ease'
-    }}>{children}</button>
-  ), [theme, screenSize.isMobile]);
+// --- Button Component ---
+   const Button = useCallback(({ children, onClick, primary = true, small = false }) => (
+     <button onClick={onClick} style={{
+       background: primary ? theme.gradient1 : 'transparent',
+       color: primary ? 'white' : theme.primary,
+       border: primary ? 'none' : `2px solid ${theme.primary}`,
+       padding: small ? '0.5rem 1rem' : (screenSize.isMobile ? '0.6rem 1.2rem' : '0.75rem 1.5rem'),
+       borderRadius: '50px',
+       fontWeight: '600',
+       fontSize: small ? '0.85rem' : (screenSize.isMobile ? '0.9rem' : '1rem'),
+       cursor: 'pointer'
+     }}>{children}</button>
+   ), [theme, screenSize.isMobile]);
 
   // ============================================
   // PAYMENT MODAL
@@ -394,12 +401,12 @@ const App = () => {
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
         backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 2000, 
         display: 'flex', alignItems: 'center', justifyContent: 'center', 
-        padding: '1rem' 
+        padding: '1rem', willChange: 'opacity'
       }} onClick={() => setShowPaymentModal(false)}>
         <div style={{ 
           backgroundColor: darkMode ? '#1e1e2e' : '#ffffff', 
           borderRadius: '28px', maxWidth: '460px', width: '100%', 
-          padding: '1.75rem', position: 'relative'
+          padding: '1.75rem', position: 'relative', willChange: 'transform'
         }} onClick={e => e.stopPropagation()}>
           
           <button onClick={() => setShowPaymentModal(false)} style={{ 
@@ -609,7 +616,7 @@ const App = () => {
           overflowY: 'auto',
           overflowX: 'hidden',
           WebkitOverflowScrolling: 'touch',
-          // Allow all tap gestures through to form inputs; only vertical scroll is blocked here
+          willChange: 'opacity',
           touchAction: 'pan-y'
         }} 
         onClick={(e) => {
@@ -618,27 +625,27 @@ const App = () => {
           }
         }}
       >
-        <div 
-          style={{ 
-            background: theme.cardBg, 
-            borderRadius: '24px', 
-            maxWidth: '1000px', 
-            width: '100%', 
-            minHeight: '90vh',
-            height: 'auto',
-            maxHeight: 'min(90vh, 95vh)',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            padding: screenSize.isMobile ? '1rem' : '1.5rem',
-            position: 'relative',
-            WebkitOverflowScrolling: 'touch',
-            // Always allow native touch on the card's contents
-            touchAction: 'manipulation'
-          }} 
-          onClick={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
-        >
+<div 
+           style={{ 
+             background: theme.cardBg, 
+             borderRadius: '24px', 
+             maxWidth: '1000px', 
+             width: '100%', 
+             minHeight: '90vh',
+             height: 'auto',
+             maxHeight: 'min(90vh, 95vh)',
+             overflowY: 'auto',
+             overflowX: 'hidden',
+             padding: screenSize.isMobile ? '1rem' : '1.5rem',
+             position: 'relative',
+             WebkitOverflowScrolling: 'touch',
+             willChange: 'transform',
+             touchAction: 'manipulation'
+           }} 
+           onClick={(e) => e.stopPropagation()}
+           onTouchStart={(e) => e.stopPropagation()}
+           onTouchEnd={(e) => e.stopPropagation()}
+         >
           
           <button 
             onClick={() => setShowSignUpModal(false)} 
@@ -885,30 +892,35 @@ const App = () => {
 
   // --- MAIN RENDER ---
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', background: theme.background, minHeight: '100vh', transition: 'background 0.3s ease' }}>
+    <div style={{ fontFamily: 'system-ui, sans-serif', background: theme.background, minHeight: '100vh' }}>
       <style>{`
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
         .hero-animate { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
-        .feature-card { transition: all 0.3s ease; }
-        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.1); }
-        input:focus, textarea:focus { outline: none; border-color: #2A6B5F !important; box-shadow: 0 0 0 3px rgba(42,107,95,0.1); }
+        @media (hover: hover) {
+          .feature-card { transition: transform 0.2s ease; }
+          .feature-card:hover { transform: translateY(-5px); }
+        }
+        @media (hover: none) {
+          .feature-card { transform: none !important; }
+        }
+        input:focus, textarea:focus { outline: none; border-color: #2A6B5F !important; }
         .leaflet-container { z-index: 1; }
         @media (max-width: 768px) { button, .kit-card, input, textarea { touch-action: manipulation; } }
       `}</style>
       
-      {/* Notification Banner */}
-      {showNotification && (
-        <div style={{
-          position: 'fixed', top: screenSize.isMobile ? '70px' : '80px', right: screenSize.isMobile ? '10px' : '20px',
-          left: screenSize.isMobile ? '10px' : 'auto', backgroundColor: showNotification.type === 'error' ? '#E76F51' : (showNotification.type === 'warning' ? '#D47A4A' : '#2A6B5F'),
-          color: 'white', padding: '0.75rem 1rem', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-          animation: 'slideIn 0.3s ease', textAlign: 'center', zIndex: 10000, fontSize: '0.9rem',
-          maxWidth: screenSize.isMobile ? 'calc(100% - 20px)' : '350px'
-        }}>
-          {showNotification.message}
-        </div>
-      )}
+{/* Notification Banner */}
+       {showNotification && (
+         <div style={{
+           position: 'fixed', top: screenSize.isMobile ? '70px' : '80px', right: screenSize.isMobile ? '10px' : '20px',
+           left: screenSize.isMobile ? '10px' : 'auto', backgroundColor: showNotification.type === 'error' ? '#E76F51' : (showNotification.type === 'warning' ? '#D47A4A' : '#2A6B5F'),
+           color: 'white', padding: '0.75rem 1rem', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+           textAlign: 'center', zIndex: 10000, fontSize: '0.9rem',
+           maxWidth: screenSize.isMobile ? 'calc(100% - 20px)' : '350px'
+         }}>
+           {showNotification.message}
+         </div>
+       )}
       
       <PaymentModal />
       <SignUpModal />
@@ -923,9 +935,7 @@ const App = () => {
             <span style={{ fontWeight: 'bold', fontSize: screenSize.isMobile ? '1.2rem' : '1.5rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>OKOA GAS</span>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button onClick={toggleDarkMode} style={{ background: darkMode ? '#2a2a3e' : '#e8e8e8', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: darkMode ? '#f0c674' : '#5a6a6e' }}>
-              {darkMode ? '☀️' : '🌙'}
-            </button>
+<button onClick={toggleDarkMode} style={{ background: darkMode ? '#2a2a3e' : '#e8e8e8', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: darkMode ? '#f0c674' : '#5a6a6e' }} aria-label="Toggle dark mode">{darkMode ? '☀️' : '🌙'}</button>
             {!screenSize.isMobile && (
               <>
                 <button onClick={() => scrollTo('home')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: darkMode ? '#e8e8e8' : '#1A2A2E' }}>Home</button>
