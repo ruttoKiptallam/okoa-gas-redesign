@@ -1,5 +1,4 @@
 {
   "framework": "vite",
-  "rootDirectory": "frontend",
   "outputDirectory": "build"
 }
